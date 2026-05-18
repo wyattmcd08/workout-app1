@@ -10,6 +10,7 @@ import { Spark } from '../components/Spark'
 import { Sheet } from '../components/Sheet'
 import { Field, Select } from '../components/Field'
 import { PrimaryButton } from '../components/PrimaryButton'
+import { EmptyState, EmptyIcons } from '../components/EmptyState'
 
 type View = 'recovery' | 'measure' | 'photos'
 
@@ -185,7 +186,12 @@ function Measurements() {
 
       <Card title="History">
         {sorted.length === 0 ? (
-          <div className="text-sm text-[var(--color-text-dim)] py-2">No entries yet.</div>
+          <EmptyState
+            icon={EmptyIcons.ruler}
+            title="TRACK YOUR NUMBERS"
+            body="Weigh in once a week, snap a photo, see the trends."
+            compact
+          />
         ) : (
           <ul className="divide-y divide-[var(--color-border)] -mx-4">
             {sorted.slice().reverse().map((m) => (
@@ -363,9 +369,12 @@ function Photos() {
 
       {(photos ?? []).length === 0 ? (
         <Card padded>
-          <div className="text-sm text-[var(--color-text-dim)] text-center py-6">
-            No photos yet. Tap upload to track your physique over time.
-          </div>
+          <EmptyState
+            icon={EmptyIcons.photo}
+            title="SNAP THE PROGRESS"
+            body="Front, back, side — same lighting, same time of day. The reps add up."
+            compact
+          />
         </Card>
       ) : (
         <div className="grid grid-cols-3 gap-2">

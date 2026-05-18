@@ -6,6 +6,8 @@ import { calculateReconstitution, SCHEDULE_OPTIONS, isDueOn } from '../lib/pepti
 import { exportBackup, importBackup } from '../lib/backup'
 import { syncToGist, restoreFromGist, daysSinceLastBackup } from '../lib/autoBackup'
 import { addStarterExercises, addStarterFoods } from '../db/seed'
+import { toast } from '../lib/toast'
+import { EmptyState, EmptyIcons } from '../components/EmptyState'
 import { Header, Segmented } from '../components/Header'
 import { Card } from '../components/Card'
 import { HeatmapCalendar, type DayValue } from '../components/HeatmapCalendar'
@@ -174,7 +176,12 @@ function PeptidesTab() {
 
       <Card title="Stack">
         {(peptides ?? []).length === 0 ? (
-          <div className="text-sm text-[var(--color-text-dim)]">No peptides yet.</div>
+          <EmptyState
+            icon={EmptyIcons.capsule}
+            title="NO PROTOCOLS"
+            body="Track peptides with dose, schedule, and cycle length. Calculator built in."
+            compact
+          />
         ) : (
           <div className="space-y-2">
             {(peptides ?? []).map((p) => (
@@ -363,7 +370,6 @@ function Row({ label, value, accent }: { label: string; value: string; accent?: 
 // ---------- SETTINGS ----------
 function SettingsTab() {
   const settings = useLiveQuery(() => getSettings(), [])
-  const [message, setMessage] = useState<string | null>(null)
   const [fileEl, setFileEl] = useState<HTMLInputElement | null>(null)
   const [showGist, setShowGist] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -374,8 +380,8 @@ function SettingsTab() {
   }, [settings?.lastBackupAt, settings?.lastGistSyncAt])
 
   function flash(m: string) {
-    setMessage(m)
-    setTimeout(() => setMessage(null), 2800)
+    // Route all status messages through the global toast
+    toast.show(m)
   }
 
   async function onExport() {
@@ -523,23 +529,75 @@ function SettingsTab() {
         </div>
       </Card>
 
+      <Card title="Theme">
+        <div className="space-y-3">
+          <div>
+            <div className="text-xs text-[var(--color-text-dim)] mb-2">Accent color</div>
+            <div className="flex gap-2.5">
+              {THEME_SWATCHES.map((sw) => {
+                const active = (settings.accentColor ?? '#ff2d3d').toLowerCase() === sw.hex.toLowerCase()
+                return (
+                  <button
+                    key={sw.hex}
+                    onClick={() => saveSettings({ accentColor: sw.hex })}
+                    className={`w-11 h-11 rounded-full border-2 transition-all active:scale-90 ${
+                      active ? 'scale-110 border-white' : 'border-transparent'
+                    }`}
+                    style={{ background: sw.hex }}
+                    aria-label={sw.name}
+                  />
+                )
+              })}
+            </div>
+          </div>
+          <label className="flex items-center justify-between text-sm pt-1">
+            <span>
+              <span className="font-semibold">Sound effects</span>
+              <span className="block text-xs text-[var(--color-text-dim)]">Set-completion tick, PR fanfare, rest-timer chime</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={settings.soundOn === 1}
+              onChange={(e) => saveSettings({ soundOn: e.target.checked ? 1 : 0 })}
+              className="w-5 h-5"
+            />
+          </label>
+          <label className="flex items-center justify-between text-sm">
+            <span>
+              <span className="font-semibold">Restart onboarding</span>
+              <span className="block text-xs text-[var(--color-text-dim)]">Walk through the welcome flow again</span>
+            </span>
+            <button
+              onClick={async () => {
+                if (!confirm('Restart onboarding? Your data stays intact.')) return
+                await saveSettings({ onboardedAt: undefined })
+              }}
+              className="text-[var(--color-accent)] font-bold text-sm px-3 py-1.5 rounded-full border border-[var(--color-accent)]/40"
+            >Restart</button>
+          </label>
+        </div>
+      </Card>
+
       <Card title="About">
         <div className="text-xs text-[var(--color-text-faint)] leading-relaxed">
-          Dialed Dawg v0.2 · Local-first PWA. All data lives on this device.
+          Dialed Dawg v0.3 · Local-first PWA. All data lives on this device.
           Add to home screen for the full-screen experience.
         </div>
       </Card>
 
       {showGist && <GistSetupSheet onClose={() => setShowGist(false)} flash={flash} />}
-
-      {message && (
-        <div className="fixed bottom-24 left-4 right-4 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-center py-3 rounded-xl z-50 animate-pop-in">
-          {message}
-        </div>
-      )}
     </div>
   )
 }
+
+const THEME_SWATCHES = [
+  { name: 'Red',    hex: '#ff2d3d' },
+  { name: 'Orange', hex: '#ff6b1a' },
+  { name: 'Amber',  hex: '#facc15' },
+  { name: 'Green',  hex: '#22c55e' },
+  { name: 'Blue',   hex: '#3b82f6' },
+  { name: 'Purple', hex: '#a855f7' },
+]
 
 function GistSetupSheet({ onClose, flash }: { onClose: () => void; flash: (m: string) => void }) {
   const settings = useLiveQuery(() => getSettings(), [])

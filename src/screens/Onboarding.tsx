@@ -102,6 +102,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Step 01"
             title="What's your name?"
             subtitle="So the app can greet you. Skip if you'd rather not."
+            art="name"
           >
             <BigInput
               value={name}
@@ -117,6 +118,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Step 02"
             title="A little about you"
             subtitle="Needed to calculate your calorie targets."
+            art="you"
           >
             <BigInput
               value={age}
@@ -146,6 +148,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Step 03"
             title="Body stats"
             subtitle={units === 'metric' ? 'Centimeters and kilograms.' : 'Feet/inches and pounds.'}
+            art="body"
           >
             {units === 'imperial' ? (
               <>
@@ -168,6 +171,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Step 04"
             title="How active are you?"
             subtitle="And what's the goal?"
+            art="activity"
           >
             <div className="space-y-2">
               <div className="eyebrow mb-1">Activity</div>
@@ -211,6 +215,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Step 05"
             title="Your targets"
             subtitle="Based on Mifflin-St Jeor. Editable anytime."
+            art="targets"
           >
             <div className="card-paper p-5 space-y-2">
               <Row label="Calories" value={`${result.recommended} kcal`} accent />
@@ -257,6 +262,7 @@ export function Onboarding({ onDone }: Props) {
             eyebrow="Last step"
             title={name ? `Let's lift, ${name}.` : "You're set."}
             subtitle="Tap finish to dive in. Your data stays on this device — back up regularly."
+            art="last"
           >
             <div className="card-accent p-5">
               <div className="eyebrow opacity-80">Daily target</div>
@@ -310,6 +316,9 @@ export function Onboarding({ onDone }: Props) {
 function Welcome() {
   return (
     <div className="flex flex-col items-start justify-center min-h-[70vh]">
+      <div className="mb-8">
+        <LogoMark />
+      </div>
       <div className="eyebrow text-[var(--color-accent)]">Welcome</div>
       <h1 className="display mt-3" style={{ fontSize: 'clamp(48px, 14vw, 78px)', lineHeight: 0.92 }}>
         Dialed
@@ -325,15 +334,101 @@ function Welcome() {
   )
 }
 
-function FormStep({ eyebrow, title, subtitle, children }: {
+function LogoMark() {
+  return (
+    <svg viewBox="0 0 120 120" width="100" height="100" aria-hidden="true">
+      <defs>
+        <linearGradient id="dd" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="var(--color-accent)" />
+          <stop offset="100%" stopColor="var(--color-accent-dim)" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="112" height="112" rx="28" fill="url(#dd)" />
+      <text x="60" y="78" textAnchor="middle" fontFamily="-apple-system, sans-serif"
+        fontSize="56" fontWeight="900" letterSpacing="-3" fill="white">DD</text>
+    </svg>
+  )
+}
+
+function StepArt({ kind }: { kind: 'name' | 'you' | 'body' | 'activity' | 'targets' | 'last' }) {
+  const common = {
+    width: 96, height: 96, viewBox: '0 0 96 96', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 2.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+  }
+  const accent = 'var(--color-accent)'
+  if (kind === 'name') {
+    return (
+      <svg {...common} className="text-[var(--color-text)]" style={{ color: 'var(--color-text)' }}>
+        <circle cx="48" cy="36" r="14" stroke={accent} />
+        <path d="M22 76c6-14 18-20 26-20s20 6 26 20" stroke={accent} />
+      </svg>
+    )
+  }
+  if (kind === 'you') {
+    return (
+      <svg {...common} className="text-[var(--color-text)]">
+        <circle cx="48" cy="22" r="10" stroke={accent} />
+        <path d="M28 58c2-12 10-20 20-20s18 8 20 20" stroke={accent} />
+        <path d="M28 58v18M68 58v18" stroke="var(--color-text-dim)" />
+        <path d="M32 76h12M52 76h12" stroke="var(--color-text-dim)" />
+      </svg>
+    )
+  }
+  if (kind === 'body') {
+    return (
+      <svg {...common}>
+        <circle cx="48" cy="20" r="9" stroke={accent} />
+        <path d="M36 35h24M48 35v40" stroke={accent} />
+        <path d="M36 50l-8 12M60 50l8 12" stroke={accent} />
+        <path d="M40 75l-4 14M56 75l4 14" stroke={accent} />
+      </svg>
+    )
+  }
+  if (kind === 'activity') {
+    return (
+      <svg {...common}>
+        <path d="M14 80h68" stroke="var(--color-border-strong)" />
+        <rect x="22" y="60" width="10" height="20" rx="2" fill={accent} stroke="none" />
+        <rect x="38" y="48" width="10" height="32" rx="2" fill={accent} stroke="none" />
+        <rect x="54" y="34" width="10" height="46" rx="2" fill={accent} stroke="none" />
+        <rect x="70" y="22" width="10" height="58" rx="2" fill={accent} stroke="none" />
+      </svg>
+    )
+  }
+  if (kind === 'targets') {
+    return (
+      <svg {...common}>
+        <circle cx="48" cy="48" r="32" stroke="var(--color-border-strong)" strokeWidth="6" />
+        <circle cx="48" cy="48" r="32" stroke={accent} strokeWidth="6"
+          strokeDasharray="200 201" strokeDashoffset="0" transform="rotate(-90 48 48)" />
+        <path d="M36 50l9 9 16-18" stroke={accent} strokeWidth="3.5" />
+      </svg>
+    )
+  }
+  // 'last' — flame
+  return (
+    <svg {...common}>
+      <path d="M48 14c8 12 18 18 18 32a18 18 0 0 1-36 0c0-8 6-14 12-20 0 6 4 8 6 8 0-6-2-12 0-20z"
+        stroke={accent} fill="var(--color-accent-soft)" />
+    </svg>
+  )
+}
+
+function FormStep({ eyebrow, title, subtitle, art, children }: {
   eyebrow: string
   title: string
   subtitle: string
+  art?: 'name' | 'you' | 'body' | 'activity' | 'targets' | 'last'
   children: React.ReactNode
 }) {
   return (
     <div className="space-y-5">
       <div>
+        {art && (
+          <div className="mb-2 -ml-3">
+            <StepArt kind={art} />
+          </div>
+        )}
         <div className="eyebrow text-[var(--color-accent)]">{eyebrow}</div>
         <h2 className="display mt-2" style={{ fontSize: 'clamp(28px, 8vw, 40px)', lineHeight: 1 }}>{title}</h2>
         <p className="text-sm text-[var(--color-text-dim)] mt-2 leading-relaxed">{subtitle}</p>

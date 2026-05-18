@@ -199,6 +199,9 @@ export interface Settings {
   gistToken?: string            // GitHub PAT (classic, gist scope)
   gistId?: string               // backing gist id
   lastGistSyncAt?: number
+  // theme + UX
+  accentColor?: string          // hex; defaults to #ff2d3d
+  soundOn?: 1 | 0
   // misc
   motivationalQuotes?: 1 | 0
 }

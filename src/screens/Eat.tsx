@@ -4,6 +4,7 @@ import { db, MEALS, getSettings, saveSettings, type Meal, type Food, type Sex, t
 import { today, shiftDate, prettyDate } from '../lib/date'
 import { calculateTdee, ACTIVITY_LABELS, GOAL_LABELS } from '../lib/tdee'
 import { lbToKg, inToCm } from '../lib/format'
+import { toast } from '../lib/toast'
 import { Header, Segmented } from '../components/Header'
 import { Card } from '../components/Card'
 import { MacroBar } from '../components/MacroBar'
@@ -650,7 +651,7 @@ function CalorieCalculator() {
       goal,
       units,
     })
-    alert('Targets updated.')
+    toast.success('Targets updated', `${result.recommended} kcal / ${result.proteinG}P / ${result.carbsG}C / ${result.fatG}F`)
   }
 
   return (

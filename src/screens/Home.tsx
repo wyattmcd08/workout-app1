@@ -8,7 +8,9 @@ import { Card, Stat } from '../components/Card'
 import { MacroBar } from '../components/MacroBar'
 import { ProgressRing } from '../components/ProgressRing'
 import { Spark } from '../components/Spark'
-import { isBackupOverdue, downloadBackup } from '../lib/autoBackup'
+import { isBackupOverdue, downloadBackup, autoSyncIfConfigured } from '../lib/autoBackup'
+import { usePullToRefresh } from '../lib/usePullToRefresh'
+import { toast } from '../lib/toast'
 
 const QUOTES = [
   'Pain is temporary. PRs last forever.',
@@ -100,6 +102,33 @@ export function Home({ goTrain, goEat }: Props) {
     setBackupOverdue(false)
   }
 
+  // Pull-to-refresh: trigger cloud sync if configured.
+  const { pull, ratio, refreshing } = usePullToRefresh({
+    onRefresh: async () => {
+      if (settings?.gistToken) {
+        try {
+          await autoSyncIfConfigured()
+          toast.show({ title: 'Synced to cloud', variant: 'success' })
+        } catch {
+          toast.error('Sync failed')
+        }
+      } else {
+        toast.show({ title: 'Pulled to refresh', detail: 'Set up cloud sync in Settings to back up automatically.' })
+      }
+    },
+  })
+
+  // Time-of-day greeting
+  const hour = new Date().getHours()
+  const firstName = settings?.name?.split(' ')[0]
+  const greeting = firstName
+    ? hour < 4 ? `Up late, ${firstName}`
+    : hour < 11 ? `Morning, ${firstName}`
+    : hour < 17 ? `Locked in, ${firstName}`
+    : hour < 22 ? `Evening, ${firstName}`
+    : `Up late, ${firstName}`
+    : 'Diary'
+
   // Week strip (Mon-Sun current week)
   const weekStart = useMemo(() => {
     const d = new Date()
@@ -113,9 +142,24 @@ export function Home({ goTrain, goEat }: Props) {
   })
 
   return (
-    <div className="pb-32">
+    <div className="pb-32" style={{ transform: pull > 0 ? `translateY(${pull}px)` : undefined, transition: pull > 0 ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
+      {/* Pull-to-refresh indicator */}
+      {(pull > 0 || refreshing) && (
+        <div
+          className="fixed left-0 right-0 z-10 flex justify-center pointer-events-none"
+          style={{ top: 8, opacity: ratio }}
+        >
+          <div
+            className="h-10 w-10 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-accent)]"
+            style={{
+              transform: `rotate(${refreshing ? 360 : ratio * 270}deg)`,
+              animation: refreshing ? 'spin 0.8s linear infinite' : 'none',
+            }}
+          />
+        </div>
+      )}
       <Header
-        title={settings?.name ? `Yo, ${settings.name.split(' ')[0]}` : 'Diary'}
+        title={greeting}
         subtitle={new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
         right={<HeaderChip
           icon={<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5" /></svg>}
