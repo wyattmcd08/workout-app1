@@ -125,6 +125,7 @@ export const BLOCK_FORMAT_LABELS: Record<BlockFormat, string> = {
 }
 
 export interface BlockExercise {
+  id?: string                   // local UUID (v3+) — stable identity within a block
   exerciseId: number
   // Prescription (all optional — the block format decides which apply)
   sets?: number
@@ -134,6 +135,7 @@ export interface BlockExercise {
   durationSec?: number          // for timed exercises
   distanceM?: number            // meters
   calories?: number             // bike/rower kcal
+  pace?: number                 // seconds per unit (e.g. mile, km)
   restSec?: number              // rest after this exercise (standard sets)
   notes?: string
 }
@@ -191,6 +193,22 @@ export interface TemplateExercise {
 }
 
 // A logged workout session (one per day).
+export interface SessionState {
+  currentBlockId?: string
+  currentBlockStartedAt?: number
+  currentRound?: number
+  currentPhase?: 'work' | 'rest' | 'idle' | 'paused'
+  blockProgress?: Record<string, BlockProgress>
+}
+
+export interface BlockProgress {
+  completedRounds: number
+  lastTickAt: number             // for restoring countdowns after refresh
+  remainingSec?: number          // snapshot at last persist
+  elapsedSec?: number            // for stopwatch (For Time / Cardio)
+  isCompleted: boolean
+}
+
 export interface WorkoutSession {
   id?: number
   date: string
@@ -201,7 +219,16 @@ export interface WorkoutSession {
   notes?: string
   hiddenExerciseIds?: number[]
   customOrder?: number[]
+  // v3+ : resumable engine state
+  state?: SessionState
 }
+
+// SetResult — every recorded unit of work. One shape, four kinds:
+//   'set'    — classic lifting set (reps + weight)
+//   'round'  — AMRAP/EMOM/Tabata/Circuit completed round
+//   'finish' — For-Time stopwatch finish (durationSec)
+//   'cardio' — Cardio block result (duration + distance + pace)
+export type SetResultKind = 'set' | 'round' | 'finish' | 'cardio'
 
 export interface WorkoutSet {
   id?: number
@@ -214,7 +241,10 @@ export interface WorkoutSet {
   durationSec?: number
   distanceM?: number
   calories?: number
+  pace?: number                // seconds per unit
   blockId?: string             // which block this set belongs to (if block-based)
+  blockExerciseId?: string     // which BlockExercise within the block (v3+)
+  kind?: SetResultKind         // v3+; defaults to 'set' for legacy rows
   round?: number               // for AMRAP/circuit — which round
   rpe?: number
   isPr?: 1 | 0
@@ -376,6 +406,75 @@ db.version(2).stores({
   peptides: '++id, name, active',
   peptideDoses: '++id, peptideId, date',
   settings: 'id',
+})
+
+function genId(): string {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+// v3 — Unified workout engine.
+//   - Every WorkoutTemplate gets a blocks[] (legacy templateExercises rolled into one StraightSets block).
+//   - WorkoutSet rows get kind='set' by default; pre-existing AMRAP hacks (exerciseId<=0) become kind='round'.
+//   - templateExercises rows are left in place for backup compatibility but no longer read.
+db.version(3).stores({
+  foods: '++id, name, favorite, createdAt',
+  logEntries: '++id, date, meal, foodId',
+  exercises: '++id, name, primary, category, equipment, favorite, lastUsedAt',
+  workoutTemplates: '++id, order, name, favorite, programId',
+  templateExercises: '++id, templateId, order',
+  workoutSessions: '++id, date, templateId',
+  workoutSets: '++id, sessionId, exerciseId, blockId, kind',
+  programs: '++id, name, active',
+  measurements: '++id, &date',
+  photos: '++id, date, view',
+  metrics: '++id, &date',
+  peptides: '++id, name, active',
+  peptideDoses: '++id, peptideId, date',
+  settings: 'id',
+}).upgrade(async (tx) => {
+  // Migrate legacy templates → blocks[].
+  const templates = await tx.table('workoutTemplates').toArray() as WorkoutTemplate[]
+  const allTes = await tx.table('templateExercises').toArray() as TemplateExercise[]
+  const tesByTemplate = new Map<number, TemplateExercise[]>()
+  for (const te of allTes) {
+    const arr = tesByTemplate.get(te.templateId) ?? []
+    arr.push(te)
+    tesByTemplate.set(te.templateId, arr)
+  }
+  for (const t of templates) {
+    if (t.blocks && t.blocks.length > 0) continue // already block-based
+    const tes = (tesByTemplate.get(t.id!) ?? []).sort((a, b) => a.order - b.order)
+    if (tes.length === 0) continue // empty template — leave alone
+    const block: WorkoutBlock = {
+      id: genId(),
+      type: 'strength',
+      format: 'standard',
+      exercises: tes.map((te) => ({
+        id: genId(),
+        exerciseId: te.exerciseId,
+        sets: te.sets,
+        reps: te.repsHigh,                                // single target; lower bound shown in notes
+        repsText: te.repsLow !== te.repsHigh ? `${te.repsLow}-${te.repsHigh}` : undefined,
+        restSec: te.restSec,
+        notes: te.notes,
+      })),
+    }
+    await tx.table('workoutTemplates').update(t.id!, { blocks: [block] })
+  }
+
+  // Migrate sets: stamp kind='set' on all legacy rows; rewrite AMRAP hacks (exerciseId<=0) to kind='round'.
+  const sets = await tx.table('workoutSets').toArray() as WorkoutSet[]
+  for (const s of sets) {
+    if (s.kind) continue
+    if ((s.exerciseId ?? 0) <= 0) {
+      await tx.table('workoutSets').update(s.id!, {
+        kind: 'round',
+        round: s.round ?? s.reps,
+      })
+    } else {
+      await tx.table('workoutSets').update(s.id!, { kind: 'set' })
+    }
+  }
 })
 
 export const DEFAULT_SETTINGS: Settings = {

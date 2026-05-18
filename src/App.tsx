@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { seedIfEmpty } from './db/seed'
 import { getSettings } from './db'
 import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup'
+import { autoSnapshotIfFirstV3Launch } from './lib/preflight'
 import { haptic } from './lib/haptic'
 
 const TAB_ORDER: TabKey[] = ['home', 'workouts', 'exercises', 'progress', 'nutrition', 'settings']
@@ -37,6 +38,8 @@ export default function App() {
   const settings = useLiveQuery(() => getSettings(), [])
 
   useEffect(() => {
+    // Take a v2 safety snapshot before any v3 migration touches the DB.
+    autoSnapshotIfFirstV3Launch().catch((e) => console.warn('preflight snapshot failed', e))
     seedIfEmpty().then(() => setReady(true)).catch((e) => {
       console.error('Seed failed', e)
       setReady(true)

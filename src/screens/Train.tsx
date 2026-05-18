@@ -3,13 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, MUSCLE_LABELS, getSettings, type MuscleGroup, type Exercise, type WorkoutTemplate, type TemplateExercise, type WorkoutSet, type WorkoutSession } from '../db'
 import { today } from '../lib/date'
 import { estimated1RM } from '../lib/format'
-import { detectPr, formatPr } from '../lib/pr'
 import { getLastSessionSets, getExerciseHistory, formatLastSession } from '../lib/workout'
 import { suggestNext, type OverloadSuggestion } from '../lib/overload'
 import { haptic } from '../lib/haptic'
 import { sound } from '../lib/sound'
 import { toast } from '../lib/toast'
-import { useSwipeAction } from '../lib/useSwipeAction'
 import { Header, Segmented } from '../components/Header'
 import { Card, Stat } from '../components/Card'
 import { Sheet } from '../components/Sheet'
@@ -17,7 +15,8 @@ import { Field, Select } from '../components/Field'
 import { PrimaryButton } from '../components/PrimaryButton'
 import { Spark } from '../components/Spark'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
-import { AnimatedCheck } from '../components/AnimatedCheck'
+import { SetLogger } from '../components/SetLogger'
+import { logSet } from '../services/sets'
 import { WorkoutBuilder } from './WorkoutBuilder'
 import { WorkoutRun } from './WorkoutRun'
 
@@ -385,43 +384,6 @@ function ExerciseLog({ sessionId, exercise, templateExercise, existingSets, unit
     if (existing?.id) await db.workoutSets.delete(existing.id)
   }
 
-  // On set completion: detect PR, mark it, fire toast + haptic.
-  async function onCompleteSet(idx: number, weight: number, reps: number): Promise<{ isPr: boolean }> {
-    // Find or create the set first
-    let existing = existingSets.find((s) => s.setIndex === idx)
-    if (!existing) {
-      const id = await db.workoutSets.add({
-        sessionId,
-        exerciseId: exercise.id!,
-        setIndex: idx,
-        weight,
-        reps,
-        completed: 1,
-        createdAt: Date.now(),
-      })
-      existing = await db.workoutSets.get(Number(id))!
-    } else {
-      await db.workoutSets.update(existing.id!, { weight, reps, completed: 1 })
-      existing = { ...existing, weight, reps, completed: 1 }
-    }
-
-    // PR check (history excludes this set)
-    const history = await getExerciseHistory(exercise.id!, existing!.id)
-    const pr = detectPr(existing as WorkoutSet, history)
-    if (pr) {
-      await db.workoutSets.update(existing!.id!, { isPr: 1 })
-      const s = await getSettings()
-      toast.pr('🏆 NEW PR', `${exercise.name} — ${formatPr(pr)}`)
-      haptic('success')
-      if (s.soundOn) sound.fanfare()
-      return { isPr: true }
-    }
-    haptic('tap')
-    const s = await getSettings()
-    if (s.soundOn) sound.tick()
-    return { isPr: false }
-  }
-
   const lastStrip = lastSession
     ? formatLastSession(lastSession.sets, lastSession.session.date, today())
     : ''
@@ -496,23 +458,46 @@ function ExerciseLog({ sessionId, exercise, templateExercise, existingSets, unit
             </button>
           )}
           {slots.map((idx) => {
-            const ex = existingSets.find((s) => s.setIndex === idx)
-            const last = lastBySetIndex.get(idx)
+            const cur = existingSets.find((s) => s.setIndex === idx)
+            const last = lastBySetIndex.get(idx) ?? lastSession?.sets[0]
             return (
-              <SetRow
+              <SetLogger
                 key={idx}
                 idx={idx}
-                weight={ex?.weight ?? 0}
-                reps={ex?.reps ?? 0}
-                completed={ex?.completed === 1}
-                isPr={ex?.isPr === 1}
-                lastWeight={last?.weight}
-                lastReps={last?.reps}
+                exercise={exercise}
+                lastSet={last}
+                current={cur}
                 units={units}
-                onSet={(w, r, c) => setVal(idx, w, r, c ? 1 : 0)}
-                onComplete={onCompleteSet}
-                onDelete={() => deleteSet(idx)}
-                onRest={() => onRest(templateExercise?.restSec ?? 90)}
+                onDelete={cur ? () => deleteSet(idx) : undefined}
+                onSet={async (values, completed) => {
+                  const res = await logSet({
+                    sessionId,
+                    exerciseId: exercise.id!,
+                    setIndex: idx,
+                    weight: values.weight ?? 0,
+                    reps: values.reps ?? 0,
+                    durationSec: values.duration,
+                    distanceM: values.distance,
+                    calories: values.calories,
+                    pace: values.pace,
+                    kind: 'set',
+                    completed: completed ? 1 : 0,
+                  })
+                  if (completed) {
+                    if (res.isPr) {
+                      toast.pr('🏆 NEW PR', exercise.name)
+                      haptic('success')
+                      const s = await getSettings()
+                      if (s.soundOn) sound.fanfare()
+                    } else {
+                      haptic('tap')
+                      const s = await getSettings()
+                      if (s.soundOn) sound.tick()
+                    }
+                    onRest(templateExercise?.restSec ?? 90)
+                  }
+                  return { isPr: res.isPr }
+                }}
               />
             )
           })}
@@ -530,200 +515,6 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
         danger ? 'text-[var(--color-danger)]' : 'text-[var(--color-text)]'
       }`}
     >{children}</button>
-  )
-}
-
-// ---------- SET ROW ----------
-function SetRow({ idx, weight, reps, completed, isPr, lastWeight, lastReps, units, onSet, onComplete, onDelete, onRest }: {
-  idx: number
-  weight: number
-  reps: number
-  completed: boolean
-  isPr: boolean
-  lastWeight?: number
-  lastReps?: number
-  units: 'imperial' | 'metric'
-  onSet: (w: number, r: number, c: boolean) => void
-  onComplete: (idx: number, w: number, r: number) => Promise<{ isPr: boolean }>
-  onDelete: () => void
-  onRest: () => void
-}) {
-  const [w, setW] = useState(String(weight || ''))
-  const [r, setR] = useState(String(reps || ''))
-  const [flash, setFlash] = useState(false)
-
-  // Keep local state in sync if parent updates
-  useEffect(() => { setW(String(weight || '')) }, [weight])
-  useEffect(() => { setR(String(reps || '')) }, [reps])
-
-  const wn = Number(w) || 0
-  const rn = Number(r) || 0
-  const oneRm = wn > 0 && rn > 0 ? estimated1RM(wn, rn) : 0
-  const weightStep = units === 'metric' ? 2.5 : 5
-
-  // Swipe-to-delete
-  const swipe = useSwipeAction({
-    onLeft: () => { haptic('tap'); onDelete() },
-  })
-
-  async function toggleCompleted() {
-    if (!completed) {
-      const useW = wn || lastWeight || 0
-      const useR = rn || lastReps || 0
-      if (useW <= 0 || useR <= 0) return
-      if (wn === 0 && lastWeight) setW(String(lastWeight))
-      if (rn === 0 && lastReps) setR(String(lastReps))
-      const res = await onComplete(idx, useW, useR)
-      if (res.isPr) {
-        setFlash(true)
-        setTimeout(() => setFlash(false), 720)
-      }
-      onRest()
-    } else {
-      onSet(wn, rn, false)
-    }
-  }
-
-  function tapAutofill() {
-    if (completed) return
-    if (lastWeight) setW(String(lastWeight))
-    if (lastReps) setR(String(lastReps))
-    haptic('tap')
-  }
-
-  function bumpWeight(delta: number) {
-    const base = wn || lastWeight || 0
-    const next = Math.max(0, base + delta)
-    setW(String(next))
-    onSet(next, rn, completed)
-    haptic('tap')
-  }
-  function bumpReps(delta: number) {
-    const base = rn || lastReps || 0
-    const next = Math.max(0, base + delta)
-    setR(String(next))
-    onSet(wn, next, completed)
-    haptic('tap')
-  }
-
-  const placeholderW = lastWeight != null ? String(lastWeight) : '—'
-  const placeholderR = lastReps != null ? String(lastReps) : '—'
-
-  return (
-    <div className="relative overflow-hidden rounded-2xl">
-      {/* Red delete tile revealed on swipe */}
-      <div
-        className="absolute inset-y-0 right-0 flex items-center justify-end pr-5 text-white font-bold text-sm"
-        style={{ background: 'var(--color-accent)', width: Math.max(0, -swipe.dx) }}
-      >
-        {swipe.dx <= -60 ? 'Release to delete' : null}
-      </div>
-      <div
-        {...swipe.bind}
-        style={{
-          transform: swipe.dx < 0 ? `translateX(${swipe.dx}px)` : undefined,
-          transition: swipe.active ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
-        }}
-        className={`relative bg-[var(--color-surface)] ${flash ? 'animate-pr-flash' : ''}`}
-      >
-        <div className="grid grid-cols-[36px_1fr_1fr_56px] gap-2 items-center p-2">
-          {/* Set number badge — tap to autofill */}
-          <button
-            onClick={tapAutofill}
-            className={`w-9 h-9 rounded-full flex flex-col items-center justify-center font-bold tabnum text-sm border ${
-              completed
-                ? 'bg-[var(--color-accent-soft)] border-[var(--color-accent)]/40 text-[var(--color-text)]'
-                : 'bg-[var(--color-surface-2)] border-[var(--color-border)] text-[var(--color-text-dim)]'
-            }`}
-            aria-label="Set number — tap to autofill"
-          >
-            {isPr ? (
-              <span className="text-[9px] leading-none text-[var(--color-accent)] font-black">PR</span>
-            ) : null}
-            <span className="leading-none">{idx}</span>
-          </button>
-
-          {/* Weight stepper */}
-          <SetCell
-            value={w}
-            onChange={setW}
-            onBlur={() => onSet(wn, rn, completed)}
-            onMinus={() => bumpWeight(-weightStep)}
-            onPlus={() => bumpWeight(weightStep)}
-            placeholder={placeholderW}
-            label={units === 'metric' ? 'KG' : 'LB'}
-          />
-
-          {/* Reps stepper */}
-          <SetCell
-            value={r}
-            onChange={setR}
-            onBlur={() => onSet(wn, rn, completed)}
-            onMinus={() => bumpReps(-1)}
-            onPlus={() => bumpReps(1)}
-            placeholder={placeholderR}
-            label="REPS"
-          />
-
-          {/* Big check button with animated checkmark */}
-          <button
-            onClick={toggleCompleted}
-            className={`h-12 w-12 rounded-2xl flex items-center justify-center transition-all active:scale-90 ${
-              completed
-                ? 'bg-[var(--color-accent)] text-white shadow-[0_6px_18px_-6px_var(--color-accent)]'
-                : 'bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-text-dim)]'
-            }`}
-            aria-label="Toggle set completed"
-          >
-            <AnimatedCheck checked={completed} size={22} strokeWidth={3} />
-          </button>
-        </div>
-
-        {oneRm > 0 && completed && (
-          <div className="text-[10px] text-[var(--color-text-faint)] tabnum px-12 pb-2 -mt-1">
-            ≈ {Math.round(oneRm)} 1RM
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function SetCell({ value, onChange, onBlur, onMinus, onPlus, placeholder, label }: {
-  value: string
-  onChange: (v: string) => void
-  onBlur: () => void
-  onMinus: () => void
-  onPlus: () => void
-  placeholder: string
-  label: string
-}) {
-  return (
-    <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl flex items-stretch overflow-hidden h-12">
-      <button
-        onClick={onMinus}
-        className="w-8 flex items-center justify-center text-[var(--color-text-dim)] text-lg active:bg-[var(--color-surface-3)] transition-colors"
-        aria-label="Decrease"
-      >−</button>
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <input
-          type="number"
-          inputMode="decimal"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          placeholder={placeholder}
-          className="w-full text-center display-num bg-transparent focus:outline-none placeholder:text-[var(--color-text-faint)]/40"
-          style={{ fontSize: 18 }}
-        />
-        <span className="text-[8px] text-[var(--color-text-faint)] uppercase tracking-wider leading-none -mt-0.5">{label}</span>
-      </div>
-      <button
-        onClick={onPlus}
-        className="w-8 flex items-center justify-center text-[var(--color-text-dim)] text-lg active:bg-[var(--color-surface-3)] transition-colors"
-        aria-label="Increase"
-      >+</button>
-    </div>
   )
 }
 

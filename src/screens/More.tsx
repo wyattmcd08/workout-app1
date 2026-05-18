@@ -5,6 +5,7 @@ import { today, shiftDate } from '../lib/date'
 import { calculateReconstitution, SCHEDULE_OPTIONS, isDueOn } from '../lib/peptide'
 import { exportBackup, importBackup } from '../lib/backup'
 import { syncToGist, restoreFromGist, daysSinceLastBackup } from '../lib/autoBackup'
+import { downloadSnapshot, hasSnapshot } from '../lib/preflight'
 import { addStarterExercises, addStarterFoods } from '../db/seed'
 import { toast } from '../lib/toast'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
@@ -492,6 +493,15 @@ function SettingsTab() {
               e.target.value = ''
             }}
           />
+          {hasSnapshot() && (
+            <PrimaryButton
+              variant="ghost"
+              onClick={() => {
+                const ok = downloadSnapshot()
+                flash(ok ? 'Pre-v3 snapshot downloaded' : 'No snapshot found')
+              }}
+            >Download pre-v3 snapshot</PrimaryButton>
+          )}
         </div>
       </Card>
 

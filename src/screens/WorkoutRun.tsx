@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
-  db, BLOCK_TYPE_LABELS, BLOCK_FORMAT_LABELS,
+  db, BLOCK_TYPE_LABELS, BLOCK_FORMAT_LABELS, getSettings,
   type WorkoutSession, type WorkoutBlock, type BlockExercise, type WorkoutSet, type Exercise,
 } from '../db'
 import { useStopwatch, useCountdown, formatMMSS } from '../lib/timer'
 import { haptic } from '../lib/haptic'
 import { sound } from '../lib/sound'
 import { toast } from '../lib/toast'
+import { logSet, removeSet, getLastSet } from '../services/sets'
+import { recordRound, recordFinish } from '../services/rounds'
 import { Card } from '../components/Card'
 import { PrimaryButton } from '../components/PrimaryButton'
+import { SetLogger } from '../components/SetLogger'
 
 interface Props {
   session: WorkoutSession
@@ -133,8 +136,8 @@ function AmrapRun({ block, session, exById }: BlockRunInner) {
       setRunning(false)
       haptic('chime')
       toast.pr('Time!', `${rounds} round${rounds === 1 ? '' : 's'} logged`)
-      // Record AMRAP total — one set per round with rounds count in `reps`
-      void recordAmrap(session.id!, block.id, rounds)
+      // Record total rounds — clean schema, kind='round'
+      void recordRound({ sessionId: session.id!, blockId: block.id, round: rounds, reps: rounds })
     }
   }, [expired, running, rounds, session.id, block.id])
 
@@ -325,7 +328,7 @@ function TabataRun({ block, exById }: BlockRunInner) {
 }
 
 // ---------- FOR TIME (stopwatch) ----------
-function ForTimeRun({ block, exById }: BlockRunInner) {
+function ForTimeRun({ block, session, exById }: BlockRunInner) {
   const [running, setRunning] = useState(false)
   const elapsed = useStopwatch(running)
   const cap = block.timeCapSec
@@ -337,6 +340,7 @@ function ForTimeRun({ block, exById }: BlockRunInner) {
     haptic('success')
     sound.fanfare()
     toast.pr('Time!', formatMMSS(elapsed))
+    void recordFinish({ sessionId: session.id!, blockId: block.id, elapsedSec: Math.round(elapsed) })
   }
 
   return (
@@ -395,6 +399,8 @@ function StandardExerciseLog({ block, blockExercise, session, ex }: {
   session: WorkoutSession
   ex?: Exercise
 }) {
+  const settings = useLiveQuery(() => getSettings(), [])
+  const units = settings?.units ?? 'imperial'
   const sets = useLiveQuery<WorkoutSet[]>(
     () => db.workoutSets
       .where('sessionId').equals(session.id!)
@@ -402,32 +408,28 @@ function StandardExerciseLog({ block, blockExercise, session, ex }: {
       .toArray(),
     [session.id, block.id, blockExercise.exerciseId],
   )
+  const [lastSet, setLastSet] = useState<WorkoutSet | undefined>()
+
+  useEffect(() => {
+    let cancel = false
+    getLastSet(blockExercise.exerciseId, session.id).then((s) => { if (!cancel) setLastSet(s) })
+    return () => { cancel = true }
+  }, [blockExercise.exerciseId, session.id])
 
   const targetSets = blockExercise.sets ?? 3
   const slots = Array.from({ length: Math.max(targetSets, (sets ?? []).length) }, (_, i) => i + 1)
 
-  async function setVal(idx: number, weight: number, reps: number, completed: 0 | 1) {
-    const existing = (sets ?? []).find((s) => s.setIndex === idx)
-    if (existing) {
-      await db.workoutSets.update(existing.id!, { weight, reps, completed })
-    } else {
-      await db.workoutSets.add({
-        sessionId: session.id!,
-        exerciseId: blockExercise.exerciseId,
-        blockId: block.id,
-        setIndex: idx,
-        weight,
-        reps,
-        completed,
-        createdAt: Date.now(),
-      })
-    }
-    if (completed) { haptic('success') }
+  if (!ex) {
+    return (
+      <div className="bg-[var(--color-surface-2)] rounded-2xl p-3 border border-[var(--color-border)] text-[var(--color-text-faint)] text-sm">
+        (exercise deleted)
+      </div>
+    )
   }
 
   return (
     <div className="bg-[var(--color-surface-2)] rounded-2xl p-3 border border-[var(--color-border)]">
-      <div className="font-bold tracking-tight mb-2">{ex?.name ?? '(deleted)'}</div>
+      <div className="font-bold tracking-tight mb-1">{ex.name}</div>
       <div className="text-[10px] text-[var(--color-text-faint)] uppercase tracking-wider mb-2">
         Target: {blockExercise.sets ?? 3} × {blockExercise.reps ?? 8}
       </div>
@@ -435,62 +437,47 @@ function StandardExerciseLog({ block, blockExercise, session, ex }: {
         {slots.map((idx) => {
           const cur = (sets ?? []).find((s) => s.setIndex === idx)
           return (
-            <StandardSet
+            <SetLogger
               key={idx}
               idx={idx}
-              prefillWeight={blockExercise.weight ?? cur?.weight ?? 0}
-              prefillReps={blockExercise.reps ?? cur?.reps ?? 0}
-              actualWeight={cur?.weight ?? 0}
-              actualReps={cur?.reps ?? 0}
-              completed={cur?.completed === 1}
-              onSet={(w, r, c) => setVal(idx, w, r, c ? 1 : 0)}
+              exercise={ex}
+              blockExercise={blockExercise}
+              lastSet={lastSet}
+              current={cur}
+              units={units}
+              onDelete={cur ? () => removeSet(cur.id!) : undefined}
+              onSet={async (values, completed) => {
+                const res = await logSet({
+                  sessionId: session.id!,
+                  blockId: block.id,
+                  blockExerciseId: blockExercise.id,
+                  exerciseId: ex.id!,
+                  setIndex: idx,
+                  weight: values.weight ?? 0,
+                  reps: values.reps ?? 0,
+                  durationSec: values.duration,
+                  distanceM: values.distance,
+                  calories: values.calories,
+                  pace: values.pace,
+                  kind: 'set',
+                  completed: completed ? 1 : 0,
+                })
+                if (res.isPr) {
+                  toast.pr('🏆 NEW PR', ex.name)
+                  haptic('success')
+                  const s = await getSettings()
+                  if (s.soundOn) sound.fanfare()
+                } else if (completed) {
+                  haptic('success')
+                  const s = await getSettings()
+                  if (s.soundOn) sound.tick()
+                }
+                return { isPr: res.isPr }
+              }}
             />
           )
         })}
       </div>
-    </div>
-  )
-}
-
-function StandardSet({ idx, prefillWeight, prefillReps, actualWeight, actualReps, completed, onSet }: {
-  idx: number
-  prefillWeight: number
-  prefillReps: number
-  actualWeight: number
-  actualReps: number
-  completed: boolean
-  onSet: (w: number, r: number, c: boolean) => void
-}) {
-  const [w, setW] = useState(String(actualWeight || ''))
-  const [r, setR] = useState(String(actualReps || ''))
-
-  useEffect(() => { setW(String(actualWeight || '')) }, [actualWeight])
-  useEffect(() => { setR(String(actualReps || '')) }, [actualReps])
-
-  function toggle() {
-    const wn = Number(w) || prefillWeight
-    const rn = Number(r) || prefillReps
-    onSet(wn, rn, !completed)
-    if (!completed) setW(String(wn))
-    if (!completed) setR(String(rn))
-  }
-
-  return (
-    <div className="grid grid-cols-[28px_1fr_1fr_44px] gap-2 items-center">
-      <span className="text-[var(--color-text-dim)] text-sm font-bold tabnum">{idx}</span>
-      <input type="number" inputMode="decimal" value={w} onChange={(e) => setW(e.target.value)}
-        onBlur={() => onSet(Number(w) || 0, Number(r) || 0, completed)}
-        placeholder={String(prefillWeight || 'lb')}
-        className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-2 py-2 tabnum text-center focus:border-[var(--color-accent)]" />
-      <input type="number" inputMode="numeric" value={r} onChange={(e) => setR(e.target.value)}
-        onBlur={() => onSet(Number(w) || 0, Number(r) || 0, completed)}
-        placeholder={String(prefillReps || 'reps')}
-        className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-2 py-2 tabnum text-center focus:border-[var(--color-accent)]" />
-      <button
-        onClick={toggle}
-        className={`h-9 rounded-lg font-bold ${completed ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-dim)]'}`}
-        aria-label="Toggle complete"
-      >✓</button>
     </div>
   )
 }
@@ -546,17 +533,3 @@ function formatPrescription(be: BlockExercise): string {
   return parts.join(' · ') || '—'
 }
 
-async function recordAmrap(sessionId: number, blockId: string, rounds: number): Promise<void> {
-  // Record a single tracking set with rounds in `reps` and a placeholder weight=0.
-  await db.workoutSets.add({
-    sessionId,
-    exerciseId: -1, // placeholder exerciseId for AMRAP totals
-    blockId,
-    setIndex: 1,
-    weight: 0,
-    reps: rounds,
-    round: rounds,
-    completed: 1,
-    createdAt: Date.now(),
-  })
-}
