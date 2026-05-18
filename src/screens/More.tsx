@@ -8,6 +8,7 @@ import { syncToGist, restoreFromGist, daysSinceLastBackup } from '../lib/autoBac
 import { addStarterExercises, addStarterFoods } from '../db/seed'
 import { toast } from '../lib/toast'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Header, Segmented } from '../components/Header'
 import { Card } from '../components/Card'
 import { HeatmapCalendar, type DayValue } from '../components/HeatmapCalendar'
@@ -33,9 +34,11 @@ export function More() {
           onChange={setView}
         />
       </div>
-      {view === 'calendar' && <CalendarTab />}
-      {view === 'peptides' && <PeptidesTab />}
-      {view === 'settings' && <SettingsTab />}
+      <ErrorBoundary fallbackLabel={`${view} hit a bug.`}>
+        {view === 'calendar' && <CalendarTab />}
+        {view === 'peptides' && <PeptidesTab />}
+        {view === 'settings' && <SettingsTab />}
+      </ErrorBoundary>
     </div>
   )
 }
@@ -123,8 +126,17 @@ function CalendarTab() {
 
 // ---------- PEPTIDES ----------
 function PeptidesTab() {
-  const peptides = useLiveQuery(() => db.peptides.orderBy('createdAt').toArray(), [])
-  const doses = useLiveQuery(() => db.peptideDoses.orderBy('date').reverse().limit(50).toArray(), [])
+  // Defensive queries — avoid chained Collection ops that can be brittle.
+  const peptides = useLiveQuery(async () => {
+    const all = await db.peptides.toArray()
+    return all.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  }, [])
+  const doses = useLiveQuery(async () => {
+    const all = await db.peptideDoses.toArray()
+    return all
+      .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+      .slice(0, 50)
+  }, [])
   const [editing, setEditing] = useState<Peptide | 'new' | null>(null)
   const [calcOpen, setCalcOpen] = useState(false)
   const todayISO = today()

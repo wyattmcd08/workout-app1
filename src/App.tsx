@@ -8,6 +8,7 @@ import { Body } from './screens/Body'
 import { More } from './screens/More'
 import { Onboarding } from './screens/Onboarding'
 import { Toaster } from './components/Toaster'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { seedIfEmpty } from './db/seed'
 import { getSettings } from './db'
 import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup'
@@ -90,11 +91,13 @@ export default function App() {
         key={tab}
         className={direction === 'right' ? 'animate-slide-from-right' : 'animate-slide-from-left'}
       >
-        {tab === 'home'  && <Home goTrain={() => handleTabChange('train')} goEat={() => handleTabChange('eat')} />}
-        {tab === 'train' && <Train />}
-        {tab === 'eat'   && <Eat />}
-        {tab === 'body'  && <Body />}
-        {tab === 'more'  && <More />}
+        <ErrorBoundary fallbackLabel={`${tab} hit a bug.`}>
+          {tab === 'home'  && <Home goTrain={() => handleTabChange('train')} goEat={() => handleTabChange('eat')} />}
+          {tab === 'train' && <Train />}
+          {tab === 'eat'   && <Eat />}
+          {tab === 'body'  && <Body />}
+          {tab === 'more'  && <More />}
+        </ErrorBoundary>
       </div>
       <TabBar active={tab} onChange={handleTabChange} />
       <Toaster />

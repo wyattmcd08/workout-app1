@@ -50,8 +50,10 @@ export const SCHEDULE_OPTIONS = [
   { value: 'weekly', label: 'Weekly' },
 ]
 
-export function isDueOn(schedule: string, dateISO: string, startISO?: string): boolean {
+export function isDueOn(schedule: string | undefined | null, dateISO: string, startISO?: string): boolean {
+  if (!schedule) return false
   const dt = new Date(dateISO)
+  if (isNaN(dt.getTime())) return false
   const dow = dt.getDay() // 0 sun .. 6 sat
   switch (schedule) {
     case 'daily': return true
