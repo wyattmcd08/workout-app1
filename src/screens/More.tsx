@@ -9,6 +9,7 @@ import { addStarterExercises, addStarterFoods } from '../db/seed'
 import { toast } from '../lib/toast'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { DayDetailSheet } from '../components/DayDetailSheet'
 import { Header, Segmented } from '../components/Header'
 import { Card } from '../components/Card'
 import { HeatmapCalendar, type DayValue } from '../components/HeatmapCalendar'
@@ -50,6 +51,7 @@ function CalendarTab() {
   const foods = useLiveQuery(() => db.foods.toArray(), [])
   const settings = useLiveQuery(() => getSettings(), [])
   const measurements = useLiveQuery(() => db.measurements.toArray(), [])
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
   const foodById = new Map((foods ?? []).map((f) => [f.id!, f]))
   const sessionDates = new Set((sessions ?? []).map((s) => s.date))
@@ -94,8 +96,12 @@ function CalendarTab() {
   return (
     <div className="px-4 space-y-3">
       <Card padded>
-        <HeatmapCalendar values={values} />
+        <HeatmapCalendar values={values} onSelect={(iso) => setSelectedDay(iso)} />
+        <div className="text-[10px] text-[var(--color-text-faint)] uppercase tracking-wider font-semibold mt-3 text-center">
+          Tap any day to view / edit
+        </div>
       </Card>
+      <DayDetailSheet iso={selectedDay} onClose={() => setSelectedDay(null)} />
 
       <div className="grid grid-cols-3 gap-3">
         <Card padded>

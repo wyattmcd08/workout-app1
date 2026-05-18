@@ -250,8 +250,8 @@ a { color: inherit; }
   from { opacity: 0; transform: translateX(-28px); }
   to   { opacity: 1; transform: none; }
 }
-.animate-slide-from-right { animation: slide-from-right 240ms cubic-bezier(0.22, 1, 0.36, 1); }
-.animate-slide-from-left  { animation: slide-from-left  240ms cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-slide-from-right { animation: slide-from-right 280ms cubic-bezier(0.34, 1.36, 0.64, 1); }
+.animate-slide-from-left  { animation: slide-from-left  280ms cubic-bezier(0.34, 1.36, 0.64, 1); }
 
 /* PR celebration — flash + lift */
 @keyframes pr-flash {

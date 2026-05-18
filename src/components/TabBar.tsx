@@ -7,7 +7,6 @@ interface Props {
   onChange: (k: TabKey) => void
 }
 
-// Inline SVG icons — sharp, line-style, scale crisp at any size.
 const Icons: Record<TabKey, ReactNode> = {
   home: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -57,13 +56,43 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'more',  label: 'More' },
 ]
 
+// Each button is 48px wide with 2px gap. Pill matches a button (48px).
+const BUTTON_W = 48
+const GAP = 2
+
 export function TabBar({ active, onChange }: Props) {
+  const activeIndex = TABS.findIndex((t) => t.key === active)
+  // Account for the 6px (px-1.5) inner padding on the nav.
+  const pillX = 6 + activeIndex * (BUTTON_W + GAP)
+
   return (
     <div
       className="fixed inset-x-0 z-40 flex justify-center pointer-events-none"
       style={{ bottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
     >
-      <nav className="glass rounded-full px-1.5 py-1.5 flex items-center gap-0.5 pointer-events-auto shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]">
+      <nav
+        className="glass rounded-full px-1.5 py-1.5 flex items-center gap-0.5 pointer-events-auto shadow-[0_12px_40px_-12px_rgba(0,0,0,0.85)] relative"
+        style={{
+          backdropFilter: 'blur(24px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(200%)',
+        }}
+      >
+        {/* Hairline top highlight */}
+        <span
+          className="absolute left-2 right-2 top-0 h-px pointer-events-none rounded-full"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)' }}
+        />
+        {/* Sliding active pill */}
+        <span
+          aria-hidden
+          className="absolute top-1.5 w-12 h-12 rounded-full pointer-events-none"
+          style={{
+            transform: `translate3d(${pillX}px, 0, 0)`,
+            transition: 'transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+            background: 'var(--color-accent)',
+            boxShadow: '0 6px 24px -6px var(--color-accent)',
+          }}
+        />
         {TABS.map((t) => {
           const isActive = active === t.key
           return (
@@ -72,13 +101,13 @@ export function TabBar({ active, onChange }: Props) {
               onClick={() => onChange(t.key)}
               aria-label={t.label}
               aria-current={isActive ? 'page' : undefined}
-              className={`relative flex items-center justify-center transition-all active:scale-90 ${
-                isActive
-                  ? 'bg-[var(--color-accent)] text-white w-12 h-12 rounded-full'
-                  : 'text-[var(--color-text-dim)] w-12 h-12 rounded-full'
-              }`}
+              className="relative z-10 flex items-center justify-center active:scale-90 transition-transform w-12 h-12 rounded-full"
             >
-              <span className="w-5 h-5 inline-block">{Icons[t.key]}</span>
+              <span
+                className={`w-5 h-5 inline-block transition-colors duration-300 ${
+                  isActive ? 'text-white' : 'text-[var(--color-text-dim)]'
+                }`}
+              >{Icons[t.key]}</span>
             </button>
           )
         })}

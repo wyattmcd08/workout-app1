@@ -53,6 +53,7 @@ export interface Exercise {
   primary: MuscleGroup
   secondary: MuscleGroup[]
   notes?: string
+  custom?: 1 | 0
   createdAt: number
 }
 
@@ -87,6 +88,8 @@ export interface WorkoutSession {
   startedAt: number
   endedAt?: number
   notes?: string
+  hiddenExerciseIds?: number[]
+  customOrder?: number[]
 }
 
 export interface WorkoutSet {
