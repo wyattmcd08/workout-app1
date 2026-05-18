@@ -174,6 +174,9 @@ export type Goal = 'lose' | 'maintain' | 'gain'
 export interface Settings {
   id: 'settings'
   units: UnitSystem
+  name?: string
+  // onboarding
+  onboardedAt?: number
   // profile (for TDEE calc)
   age?: number
   heightCm?: number
@@ -190,6 +193,12 @@ export interface Settings {
   sodium?: number
   waterTargetMl?: number
   sleepTargetHrs?: number
+  // backup
+  lastBackupAt?: number
+  autoBackupDays?: number      // remind every N days, default 7
+  gistToken?: string            // GitHub PAT (classic, gist scope)
+  gistId?: string               // backing gist id
+  lastGistSyncAt?: number
   // misc
   motivationalQuotes?: 1 | 0
 }
@@ -238,6 +247,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sodium: 2300,
   waterTargetMl: 3000,
   sleepTargetHrs: 8,
+  autoBackupDays: 7,
   motivationalQuotes: 1,
 }
 

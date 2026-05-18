@@ -1,6 +1,10 @@
 import { db, ensureSettings, type Exercise, type Food } from '.'
 
-const SEED_EXERCISES: Omit<Exercise, 'id' | 'createdAt'>[] = [
+// Starter pack — NOT seeded automatically. Only added when the user opts in
+// during onboarding or from Settings → "Add starter pack". They can delete
+// anything they don't want and add their own custom entries.
+
+const STARTER_EXERCISES: Omit<Exercise, 'id' | 'createdAt'>[] = [
   { name: 'Barbell Bench Press', primary: 'chest', secondary: ['triceps', 'shoulders'] },
   { name: 'Incline Dumbbell Press', primary: 'chest', secondary: ['shoulders', 'triceps'] },
   { name: 'Cable Fly', primary: 'chest', secondary: [] },
@@ -27,7 +31,7 @@ const SEED_EXERCISES: Omit<Exercise, 'id' | 'createdAt'>[] = [
   { name: 'Plank', primary: 'core', secondary: [] },
 ]
 
-const SEED_FOODS: Omit<Food, 'id' | 'createdAt'>[] = [
+const STARTER_FOODS: Omit<Food, 'id' | 'createdAt'>[] = [
   { name: 'Chicken Breast (cooked)', servingSize: 100, servingUnit: 'g', kcal: 165, protein: 31, carbs: 0, fat: 3.6, favorite: 1 },
   { name: 'White Rice (cooked)', servingSize: 100, servingUnit: 'g', kcal: 130, protein: 2.7, carbs: 28, fat: 0.3, favorite: 1 },
   { name: 'Egg, whole large', servingSize: 1, servingUnit: 'egg', kcal: 72, protein: 6.3, carbs: 0.4, fat: 4.8, favorite: 1 },
@@ -40,16 +44,25 @@ const SEED_FOODS: Omit<Food, 'id' | 'createdAt'>[] = [
   { name: 'Almonds', servingSize: 28, servingUnit: 'g', kcal: 164, protein: 6, carbs: 6, fat: 14 },
 ]
 
+// Called on every launch — only ensures settings exist. Never seeds content.
 export async function seedIfEmpty(): Promise<void> {
   await ensureSettings()
-  const exerciseCount = await db.exercises.count()
-  if (exerciseCount === 0) {
-    const now = Date.now()
-    await db.exercises.bulkAdd(SEED_EXERCISES.map((e) => ({ ...e, createdAt: now })))
-  }
-  const foodCount = await db.foods.count()
-  if (foodCount === 0) {
-    const now = Date.now()
-    await db.foods.bulkAdd(SEED_FOODS.map((f) => ({ ...f, createdAt: now })))
-  }
+}
+
+// Adds the starter exercises if the table is empty. Safe to call multiple times.
+export async function addStarterExercises(): Promise<number> {
+  const count = await db.exercises.count()
+  if (count > 0) return 0
+  const now = Date.now()
+  await db.exercises.bulkAdd(STARTER_EXERCISES.map((e) => ({ ...e, createdAt: now })))
+  return STARTER_EXERCISES.length
+}
+
+// Adds the starter foods if the table is empty. Safe to call multiple times.
+export async function addStarterFoods(): Promise<number> {
+  const count = await db.foods.count()
+  if (count > 0) return 0
+  const now = Date.now()
+  await db.foods.bulkAdd(STARTER_FOODS.map((f) => ({ ...f, createdAt: now })))
+  return STARTER_FOODS.length
 }

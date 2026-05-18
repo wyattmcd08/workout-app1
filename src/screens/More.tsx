@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, getSettings, saveSettings, type Peptide } from '../db'
 import { today, shiftDate } from '../lib/date'
 import { calculateReconstitution, SCHEDULE_OPTIONS, isDueOn } from '../lib/peptide'
 import { exportBackup, importBackup } from '../lib/backup'
+import { syncToGist, restoreFromGist, daysSinceLastBackup } from '../lib/autoBackup'
+import { addStarterExercises, addStarterFoods } from '../db/seed'
 import { Header, Segmented } from '../components/Header'
 import { Card } from '../components/Card'
 import { HeatmapCalendar, type DayValue } from '../components/HeatmapCalendar'
@@ -363,15 +365,23 @@ function SettingsTab() {
   const settings = useLiveQuery(() => getSettings(), [])
   const [message, setMessage] = useState<string | null>(null)
   const [fileEl, setFileEl] = useState<HTMLInputElement | null>(null)
+  const [showGist, setShowGist] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [lastBackupDays, setLastBackupDays] = useState<number | null>(null)
+
+  useEffect(() => {
+    daysSinceLastBackup().then((d) => setLastBackupDays(Number.isFinite(d) ? d : null))
+  }, [settings?.lastBackupAt, settings?.lastGistSyncAt])
 
   function flash(m: string) {
     setMessage(m)
-    setTimeout(() => setMessage(null), 2500)
+    setTimeout(() => setMessage(null), 2800)
   }
 
   async function onExport() {
     try {
       await exportBackup()
+      await saveSettings({ lastBackupAt: Date.now() })
       flash('Backup downloaded.')
     } catch (e) {
       flash('Export failed: ' + (e as Error).message)
@@ -388,12 +398,49 @@ function SettingsTab() {
     }
   }
 
+  async function onGistSync() {
+    setBusy(true)
+    try {
+      const { id, updated } = await syncToGist()
+      flash(updated ? 'Synced to cloud.' : `New gist created (${id.slice(0, 6)}…)`)
+    } catch (e) {
+      flash('Cloud sync failed: ' + (e as Error).message)
+    } finally { setBusy(false) }
+  }
+
+  async function onGistRestore() {
+    if (!confirm('Restore from cloud? Replaces all local data.')) return
+    setBusy(true)
+    try {
+      await restoreFromGist()
+      flash('Restored from cloud.')
+    } catch (e) {
+      flash('Restore failed: ' + (e as Error).message)
+    } finally { setBusy(false) }
+  }
+
+  async function loadStarterFoodsClick() {
+    const n = await addStarterFoods()
+    flash(n > 0 ? `Added ${n} starter foods.` : 'You already have foods — none added.')
+  }
+  async function loadStarterExercisesClick() {
+    const n = await addStarterExercises()
+    flash(n > 0 ? `Added ${n} starter exercises.` : 'You already have exercises — none added.')
+  }
+
   if (!settings) return <div className="px-4">Loading...</div>
+
+  const backupStatus =
+    lastBackupDays === null ? { label: 'Never backed up', tone: 'danger' as const } :
+    lastBackupDays < 1       ? { label: 'Backed up today',     tone: 'good' as const } :
+    lastBackupDays < 7       ? { label: `${Math.floor(lastBackupDays)}d ago`, tone: 'ok' as const } :
+                               { label: `${Math.floor(lastBackupDays)}d ago — overdue`, tone: 'danger' as const }
 
   return (
     <div className="px-4 space-y-3">
       <Card title="Profile">
         <div className="space-y-3">
+          <Field label="Name" value={settings.name ?? ''} onChange={(v) => saveSettings({ name: v })} placeholder="Optional" />
           <Select label="Units" value={settings.units} onChange={(v) => saveSettings({ units: v as 'metric' | 'imperial' })} options={[
             { value: 'imperial', label: 'Imperial (lb, in)' }, { value: 'metric', label: 'Metric (kg, cm)' },
           ]} />
@@ -413,13 +460,18 @@ function SettingsTab() {
         </div>
       </Card>
 
-      <Card title="Backup">
-        <p className="text-xs text-[var(--color-text-dim)] mb-3">
-          iOS Safari can wipe site data after ~7 days. Export weekly to Files / iCloud.
+      <Card title="Backup" action={
+        <span className={`text-xs font-bold uppercase tracking-wider ${
+          backupStatus.tone === 'good' ? 'text-[var(--color-good)]' :
+          backupStatus.tone === 'danger' ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-dim)]'
+        }`}>{backupStatus.label}</span>
+      }>
+        <p className="text-xs text-[var(--color-text-dim)] mb-3 leading-relaxed">
+          iOS Safari can wipe site data after ~7 days. Export weekly to Files / iCloud, or set up cloud sync.
         </p>
         <div className="space-y-2">
-          <PrimaryButton onClick={onExport} variant="ghost">Export backup (.json)</PrimaryButton>
-          <PrimaryButton onClick={() => fileEl?.click()} variant="ghost">Import backup...</PrimaryButton>
+          <PrimaryButton onClick={onExport}>Download backup (.json)</PrimaryButton>
+          <PrimaryButton onClick={() => fileEl?.click()} variant="ghost">Import backup…</PrimaryButton>
           <input
             ref={setFileEl}
             type="file"
@@ -434,18 +486,51 @@ function SettingsTab() {
         </div>
       </Card>
 
-      <Card title="Cloud sync">
-        <div className="text-sm text-[var(--color-text-dim)]">
-          Coming later. For now, manual backup keeps your data safe.
+      <Card title="Cloud sync (GitHub Gist)" action={
+        settings.gistToken ? (
+          <span className="text-xs font-bold text-[var(--color-good)]">CONNECTED</span>
+        ) : null
+      }>
+        <p className="text-xs text-[var(--color-text-dim)] leading-relaxed mb-3">
+          Paste a free GitHub Personal Access Token (classic, <span className="font-semibold">gist</span> scope only) and the app auto-syncs your data to a private gist daily.
+        </p>
+        <div className="space-y-2">
+          <PrimaryButton onClick={() => setShowGist(true)} variant="ghost">
+            {settings.gistToken ? 'Edit connection' : 'Set up cloud sync'}
+          </PrimaryButton>
+          {settings.gistToken && (
+            <>
+              <PrimaryButton onClick={onGistSync} disabled={busy}>
+                {busy ? 'Syncing…' : 'Sync to cloud now'}
+              </PrimaryButton>
+              {settings.gistId && (
+                <PrimaryButton onClick={onGistRestore} variant="ghost" disabled={busy}>
+                  Restore from cloud
+                </PrimaryButton>
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Starter content">
+        <p className="text-xs text-[var(--color-text-dim)] mb-3 leading-relaxed">
+          Optional helpers. Only adds items if the table is empty — won't duplicate.
+        </p>
+        <div className="space-y-2">
+          <PrimaryButton onClick={loadStarterFoodsClick} variant="ghost">Add 10 starter foods</PrimaryButton>
+          <PrimaryButton onClick={loadStarterExercisesClick} variant="ghost">Add 24 starter exercises</PrimaryButton>
         </div>
       </Card>
 
       <Card title="About">
         <div className="text-xs text-[var(--color-text-faint)] leading-relaxed">
-          Dialed Dawg v0.1 · Local-first PWA. All data lives on this device.
+          Dialed Dawg v0.2 · Local-first PWA. All data lives on this device.
           Add to home screen for the full-screen experience.
         </div>
       </Card>
+
+      {showGist && <GistSetupSheet onClose={() => setShowGist(false)} flash={flash} />}
 
       {message && (
         <div className="fixed bottom-24 left-4 right-4 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-center py-3 rounded-xl z-50 animate-pop-in">
@@ -453,5 +538,71 @@ function SettingsTab() {
         </div>
       )}
     </div>
+  )
+}
+
+function GistSetupSheet({ onClose, flash }: { onClose: () => void; flash: (m: string) => void }) {
+  const settings = useLiveQuery(() => getSettings(), [])
+  const [token, setToken] = useState('')
+  const [gistId, setGistId] = useState('')
+
+  // Pre-fill once settings load
+  if (settings && token === '' && settings.gistToken && !gistId) {
+    // we don't actually surface the token (security), but allow editing gistId
+  }
+
+  async function save() {
+    await saveSettings({
+      gistToken: token.trim() || undefined,
+      gistId: gistId.trim() || undefined,
+    })
+    flash(token ? 'Connected.' : 'Cloud sync removed.')
+    onClose()
+  }
+
+  async function disconnect() {
+    if (!confirm('Remove cloud sync? The gist itself stays on GitHub.')) return
+    await saveSettings({ gistToken: undefined, gistId: undefined, lastGistSyncAt: undefined })
+    flash('Cloud sync removed.')
+    onClose()
+  }
+
+  return (
+    <Sheet open title="GitHub Gist sync" onClose={onClose}>
+      <div className="p-4 space-y-3 text-sm">
+        <p className="text-[var(--color-text-dim)] leading-relaxed">
+          1. On GitHub, go to <span className="font-mono text-xs bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">Settings → Developer settings → Personal access tokens (classic)</span>.
+        </p>
+        <p className="text-[var(--color-text-dim)] leading-relaxed">
+          2. Generate new token — give it a name, check only the <span className="font-bold text-[var(--color-accent)]">gist</span> scope, generate.
+        </p>
+        <p className="text-[var(--color-text-dim)] leading-relaxed">
+          3. Paste the token here.
+        </p>
+        <Field
+          label="GitHub Token"
+          value={token}
+          onChange={setToken}
+          type="password"
+          placeholder={settings?.gistToken ? '(saved — paste new to replace)' : 'ghp_…'}
+          autoFocus
+        />
+        <Field
+          label="Existing Gist ID (optional)"
+          value={gistId}
+          onChange={setGistId}
+          placeholder={settings?.gistId ?? 'leave blank — auto-created on first sync'}
+        />
+        <p className="text-[11px] text-[var(--color-text-faint)] leading-relaxed">
+          Token is stored only on this device. If you ever revoke it on GitHub, it stops working — no harm done.
+        </p>
+        <div className="flex gap-2 pt-1">
+          {settings?.gistToken && (
+            <PrimaryButton onClick={disconnect} variant="danger" block={false}>Disconnect</PrimaryButton>
+          )}
+          <PrimaryButton onClick={save} size="lg">Save</PrimaryButton>
+        </div>
+      </div>
+    </Sheet>
   )
 }

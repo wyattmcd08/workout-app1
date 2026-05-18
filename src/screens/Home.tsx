@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, getSettings, MUSCLE_LABELS } from '../db'
 import { today, shiftDate, toISODate } from '../lib/date'
@@ -8,6 +8,7 @@ import { Card, Stat } from '../components/Card'
 import { MacroBar } from '../components/MacroBar'
 import { ProgressRing } from '../components/ProgressRing'
 import { Spark } from '../components/Spark'
+import { isBackupOverdue, downloadBackup } from '../lib/autoBackup'
 
 const QUOTES = [
   'Pain is temporary. PRs last forever.',
@@ -88,6 +89,17 @@ export function Home({ goTrain, goEat }: Props) {
   const dayIdx = (new Date().getDay() + 6) % 7
   const todaysTemplate = (templates ?? [])[dayIdx % Math.max(1, templates?.length ?? 1)]
 
+  // Backup overdue banner
+  const [backupOverdue, setBackupOverdue] = useState(false)
+  useEffect(() => {
+    isBackupOverdue().then(setBackupOverdue).catch(() => setBackupOverdue(false))
+  }, [settings?.lastBackupAt, settings?.lastGistSyncAt])
+
+  async function handleBackupNow() {
+    await downloadBackup()
+    setBackupOverdue(false)
+  }
+
   // Week strip (Mon-Sun current week)
   const weekStart = useMemo(() => {
     const d = new Date()
@@ -103,7 +115,7 @@ export function Home({ goTrain, goEat }: Props) {
   return (
     <div className="pb-32">
       <Header
-        title="Diary"
+        title={settings?.name ? `Yo, ${settings.name.split(' ')[0]}` : 'Diary'}
         subtitle={new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
         right={<HeaderChip
           icon={<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5" /></svg>}
@@ -111,6 +123,22 @@ export function Home({ goTrain, goEat }: Props) {
       />
 
       <div className="px-4 space-y-3">
+        {backupOverdue && (
+          <button
+            onClick={handleBackupNow}
+            className="w-full card-accent p-3 flex items-center justify-between active:scale-[0.98] transition-transform animate-pulse-accent"
+          >
+            <div className="text-left">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-80">Backup overdue</div>
+              <div className="display text-[15px] mt-0.5">Save your data →</div>
+            </div>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M12 4v12m0 0l-5-5m5 5l5-5" />
+              <path d="M5 20h14" />
+            </svg>
+          </button>
+        )}
+
         {/* Week strip */}
         <div className="flex justify-between px-1">
           {weekDays.map((d) => {

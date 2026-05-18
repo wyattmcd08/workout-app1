@@ -203,3 +203,33 @@ a { color: inherit; }
 @keyframes ring-fill {
   from { stroke-dashoffset: var(--ring-c); }
 }
+
+/* Pulsing accent — used for "needs backup" banner */
+@keyframes pulse-accent {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 45, 61, 0.45); }
+  50%      { box-shadow: 0 0 0 8px rgba(255, 45, 61, 0); }
+}
+.animate-pulse-accent { animation: pulse-accent 2s ease-in-out infinite; }
+
+/* Hide scrollbar — used for horizontal chip strips */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* Subtle shimmer for empty state placeholders */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg,
+    var(--color-surface) 0%,
+    var(--color-surface-2) 50%,
+    var(--color-surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Card hover pop on touch devices */
+.card, .card-paper, .card-accent, .card-soft {
+  transition: transform 160ms ease, box-shadow 200ms ease;
+}
