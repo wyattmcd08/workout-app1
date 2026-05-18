@@ -285,3 +285,34 @@ a { color: inherit; }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+ * Page identities — each top-level tab has its own spacing,
+ * type rhythm, and density. Shared primitives, different "modes."
+ * ============================================================ */
+
+/* HOME = Command Center: airy, big, glanceable */
+.page-home { padding-top: 4px; }
+.page-home .display { letter-spacing: -0.05em; }
+.page-home h2, .page-home h3 { letter-spacing: 0.2em; font-weight: 800; }
+
+/* PROGRESS = Analytics: cooler accents, denser data, less radial glow */
+.page-progress {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 200px),
+    var(--color-bg);
+}
+.page-progress .display { letter-spacing: -0.02em; font-weight: 800; }
+.page-progress .card { background: var(--color-surface); border-color: var(--color-border); }
+/* Mute the body radial glow when on Progress — different mood */
+body:has(.page-progress)::before { opacity: 0.35; }
+
+/* WORKOUTS = Builder Lab: dense, structured, tighter spacing */
+.page-workouts .card { border-radius: 16px; }
+.page-workouts .eyebrow { letter-spacing: 0.22em; }
+
+/* EXERCISES = Library: catalog-grid, smaller cards */
+.page-exercises .card { padding: 12px 14px; }
+
+/* SETTINGS = Calm: roomy form layout */
+.page-settings .card { padding: 18px; }

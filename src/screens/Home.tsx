@@ -142,7 +142,7 @@ export function Home({ goTrain, goEat }: Props) {
   })
 
   return (
-    <div className="pb-32" style={{ transform: pull > 0 ? `translateY(${pull}px)` : undefined, transition: pull > 0 ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
+    <div className="pb-32 page-home" style={{ transform: pull > 0 ? `translateY(${pull}px)` : undefined, transition: pull > 0 ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
       {/* Pull-to-refresh indicator */}
       {(pull > 0 || refreshing) && (
         <div

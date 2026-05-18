@@ -8,8 +8,12 @@ import { Progress } from './screens/Progress'
 import { Eat } from './screens/Eat'
 import { More } from './screens/More'
 import { Onboarding } from './screens/Onboarding'
+import { FocusMode } from './screens/FocusMode'
 import { Toaster } from './components/Toaster'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { db, type WorkoutBlock } from './db'
+import { today } from './lib/date'
+import { getBlocksForTemplate } from './services/workouts'
 import { seedIfEmpty } from './db/seed'
 import { getSettings } from './db'
 import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup'
@@ -35,7 +39,13 @@ export default function App() {
   const prevTab = useRef<TabKey>('home')
   const [direction, setDirection] = useState<'right' | 'left'>('right')
   const [ready, setReady] = useState(false)
+  const [focusMode, setFocusMode] = useState(false)
+  const [focusBlocks, setFocusBlocks] = useState<WorkoutBlock[]>([])
   const settings = useLiveQuery(() => getSettings(), [])
+  const activeSession = useLiveQuery(
+    () => db.workoutSessions.where('date').equals(today()).filter((s) => !s.endedAt).first(),
+    [],
+  )
 
   useEffect(() => {
     // Take a v2 safety snapshot before any v3 migration touches the DB.
@@ -58,6 +68,23 @@ export default function App() {
     document.documentElement.style.setProperty('--color-accent', accent)
     document.documentElement.style.setProperty('--color-accent-soft', hexToRgba(accent, 0.14))
   }, [settings?.accentColor])
+
+  // Resolve blocks when an active session is found
+  useEffect(() => {
+    let cancel = false
+    if (!activeSession) {
+      setFocusBlocks([])
+      return
+    }
+    if (activeSession.templateId) {
+      getBlocksForTemplate(activeSession.templateId).then((blocks) => {
+        if (!cancel) setFocusBlocks(blocks)
+      })
+    } else {
+      setFocusBlocks([])
+    }
+    return () => { cancel = true }
+  }, [activeSession?.id, activeSession?.templateId])
 
   function handleTabChange(next: TabKey) {
     const fromIdx = TAB_ORDER.indexOf(prevTab.current)
@@ -87,6 +114,16 @@ export default function App() {
     )
   }
 
+  // Focus Mode takes over the screen when active. No tab bar.
+  if (focusMode && activeSession && focusBlocks.length > 0) {
+    return (
+      <>
+        <FocusMode session={activeSession} blocks={focusBlocks} onExit={() => setFocusMode(false)} />
+        <Toaster />
+      </>
+    )
+  }
+
   return (
     <div className="min-h-full bg-[var(--color-bg)]">
       <div
@@ -95,13 +132,29 @@ export default function App() {
       >
         <ErrorBoundary fallbackLabel={`${tab} hit a bug.`}>
           {tab === 'home'      && <Home goTrain={() => handleTabChange('workouts')} goEat={() => handleTabChange('nutrition')} />}
-          {tab === 'workouts'  && <Train />}
+          {tab === 'workouts'  && <Train onEnterFocus={(blocks) => { setFocusBlocks(blocks); setFocusMode(true) }} />}
           {tab === 'exercises' && <Exercises />}
           {tab === 'progress'  && <Progress />}
           {tab === 'nutrition' && <Eat />}
           {tab === 'settings'  && <More />}
         </ErrorBoundary>
       </div>
+
+      {/* Active workout floating CTA — quick re-entry into Focus Mode */}
+      {activeSession && focusBlocks.length > 0 && (
+        <button
+          onClick={() => setFocusMode(true)}
+          className="fixed left-4 right-4 z-30 card-accent p-3 flex items-center justify-between active:scale-[0.98] transition-transform shadow-[0_12px_40px_-12px_var(--color-accent)]"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 80px)' }}
+        >
+          <div className="text-left">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-80">Training in progress</div>
+            <div className="display mt-0.5" style={{ fontSize: 16 }}>{activeSession.name}</div>
+          </div>
+          <div className="text-[11px] font-bold uppercase tracking-wider opacity-90">Resume →</div>
+        </button>
+      )}
+
       <TabBar active={tab} onChange={handleTabChange} />
       <Toaster />
     </div>

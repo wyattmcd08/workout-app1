@@ -18,7 +18,7 @@ export function Progress() {
   const [view, setView] = useState<View>('recovery')
 
   return (
-    <div className="pb-32">
+    <div className="pb-32 page-progress">
       <Header title="Progress" subtitle="The receipts" />
 
       {/* Horizontally scrollable pill row (5 doesn't fit Segmented well) */}

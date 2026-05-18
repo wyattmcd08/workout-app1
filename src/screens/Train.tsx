@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, MUSCLE_LABELS, getSettings, type MuscleGroup, type Exercise, type WorkoutTemplate, type TemplateExercise, type WorkoutSet, type WorkoutSession } from '../db'
+import { db, MUSCLE_LABELS, getSettings, type MuscleGroup, type Exercise, type WorkoutTemplate, type TemplateExercise, type WorkoutSet, type WorkoutSession, type WorkoutBlock } from '../db'
 import { today } from '../lib/date'
 import { estimated1RM } from '../lib/format'
 import { getLastSessionSets, getExerciseHistory, formatLastSession } from '../lib/workout'
@@ -18,14 +18,13 @@ import { EmptyState, EmptyIcons } from '../components/EmptyState'
 import { SetLogger } from '../components/SetLogger'
 import { logSet } from '../services/sets'
 import { WorkoutBuilder } from './WorkoutBuilder'
-import { WorkoutRun } from './WorkoutRun'
 
 type View = 'today' | 'split' | 'progress'
 
-export function Train() {
+export function Train({ onEnterFocus }: { onEnterFocus?: (blocks: WorkoutBlock[]) => void }) {
   const [view, setView] = useState<View>('today')
   return (
-    <div className="pb-32">
+    <div className="pb-32 page-workouts">
       <Header title="Workout" subtitle="Train hard" />
       <div className="px-4 mb-3">
         <Segmented<View>
@@ -38,7 +37,7 @@ export function Train() {
           onChange={setView}
         />
       </div>
-      {view === 'today' && <TodayWorkout />}
+      {view === 'today' && <TodayWorkout onEnterFocus={onEnterFocus} />}
       {view === 'split' && <PlansTab />}
       {view === 'progress' && <Progression />}
     </div>
@@ -46,7 +45,7 @@ export function Train() {
 }
 
 // ---------- TODAY'S WORKOUT ----------
-function TodayWorkout() {
+function TodayWorkout({ onEnterFocus }: { onEnterFocus?: (blocks: WorkoutBlock[]) => void }) {
   const todayISO = today()
   const session = useLiveQuery(() => db.workoutSessions.where('date').equals(todayISO).first(), [todayISO])
   const settings = useLiveQuery(() => getSettings(), [])
@@ -98,6 +97,10 @@ function TodayWorkout() {
     setPickTemplateOpen(false)
     haptic('success')
     toast.show({ title: `Started: ${t.name}`, variant: 'success' })
+    // If block-based, enter Focus Mode
+    if (t.blocks && t.blocks.length > 0 && onEnterFocus) {
+      onEnterFocus(t.blocks)
+    }
   }
 
   async function endSession() {
@@ -113,18 +116,22 @@ function TodayWorkout() {
     await db.workoutSessions.delete(session.id!)
   }
 
-  // If this session uses a block-based template, route to WorkoutRun
+  // Block-based sessions are handled by FocusMode at the App level; the floating
+  // "Training in progress" banner handles re-entry. Render a tiny stub here so
+  // that Train Today doesn't try to render block content inline.
   if (session && activeTemplate && activeTemplate.blocks && activeTemplate.blocks.length > 0) {
     return (
-      <WorkoutRun
-        session={session}
-        blocks={activeTemplate.blocks}
-        onFinish={async () => {
-          await db.workoutSessions.update(session.id!, { endedAt: Date.now() })
-          setSummaryOpen(true)
-          haptic('success')
-        }}
-      />
+      <div className="px-4 space-y-3">
+        <div className="card-accent p-5 text-center">
+          <div className="eyebrow opacity-80">Active session</div>
+          <div className="display mt-1.5" style={{ fontSize: 'clamp(22px, 6.5vw, 28px)' }}>{session.name}</div>
+          <div className="text-xs font-bold uppercase tracking-wider opacity-80 mt-1">Tap below to enter Focus Mode</div>
+          <button
+            onClick={() => onEnterFocus?.(activeTemplate.blocks!)}
+            className="mt-4 px-6 py-3 rounded-full bg-white text-[var(--color-accent)] font-bold text-sm shadow-lg active:scale-95 transition-transform"
+          >Resume training →</button>
+        </div>
+      </div>
     )
   }
 

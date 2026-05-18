@@ -21,7 +21,7 @@ import { PrimaryButton } from '../components/PrimaryButton'
 export function More() {
   // Acts as the Settings screen now. Calendar + Peptides moved to Progress.
   return (
-    <div className="pb-32">
+    <div className="pb-32 page-settings">
       <Header title="Settings" subtitle="Make it yours" />
       <ErrorBoundary fallbackLabel="Settings hit a bug.">
         <SettingsTab />

@@ -66,7 +66,7 @@ export function Exercises() {
   }
 
   return (
-    <div className="pb-32">
+    <div className="pb-32 page-exercises">
       <Header
         title="Library"
         subtitle="Your exercises, your way"
