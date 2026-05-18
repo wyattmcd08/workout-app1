@@ -3,8 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { TabBar, type TabKey } from './components/TabBar'
 import { Home } from './screens/Home'
 import { Train } from './screens/Train'
+import { Exercises } from './screens/Exercises'
+import { Progress } from './screens/Progress'
 import { Eat } from './screens/Eat'
-import { Body } from './screens/Body'
 import { More } from './screens/More'
 import { Onboarding } from './screens/Onboarding'
 import { Toaster } from './components/Toaster'
@@ -14,7 +15,7 @@ import { getSettings } from './db'
 import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup'
 import { haptic } from './lib/haptic'
 
-const TAB_ORDER: TabKey[] = ['home', 'train', 'eat', 'body', 'more']
+const TAB_ORDER: TabKey[] = ['home', 'workouts', 'exercises', 'progress', 'nutrition', 'settings']
 const DEFAULT_ACCENT = '#ff2d3d'
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -42,7 +43,6 @@ export default function App() {
     })
   }, [])
 
-  // Persistent storage + cloud sync after onboarding completes.
   useEffect(() => {
     if (settings?.onboardedAt) {
       requestPersistentStorage().catch(() => {})
@@ -50,7 +50,6 @@ export default function App() {
     }
   }, [settings?.onboardedAt])
 
-  // Apply user's accent color whenever settings change.
   useEffect(() => {
     const accent = settings?.accentColor || DEFAULT_ACCENT
     document.documentElement.style.setProperty('--color-accent', accent)
@@ -92,11 +91,12 @@ export default function App() {
         className={direction === 'right' ? 'animate-slide-from-right' : 'animate-slide-from-left'}
       >
         <ErrorBoundary fallbackLabel={`${tab} hit a bug.`}>
-          {tab === 'home'  && <Home goTrain={() => handleTabChange('train')} goEat={() => handleTabChange('eat')} />}
-          {tab === 'train' && <Train />}
-          {tab === 'eat'   && <Eat />}
-          {tab === 'body'  && <Body />}
-          {tab === 'more'  && <More />}
+          {tab === 'home'      && <Home goTrain={() => handleTabChange('workouts')} goEat={() => handleTabChange('nutrition')} />}
+          {tab === 'workouts'  && <Train />}
+          {tab === 'exercises' && <Exercises />}
+          {tab === 'progress'  && <Progress />}
+          {tab === 'nutrition' && <Eat />}
+          {tab === 'settings'  && <More />}
         </ErrorBoundary>
       </div>
       <TabBar active={tab} onChange={handleTabChange} />

@@ -10,42 +10,27 @@ import { toast } from '../lib/toast'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { DayDetailSheet } from '../components/DayDetailSheet'
-import { Header, Segmented } from '../components/Header'
+import { Header } from '../components/Header'
 import { Card } from '../components/Card'
 import { HeatmapCalendar, type DayValue } from '../components/HeatmapCalendar'
 import { Sheet } from '../components/Sheet'
 import { Field, Select } from '../components/Field'
 import { PrimaryButton } from '../components/PrimaryButton'
 
-type View = 'calendar' | 'peptides' | 'settings'
-
 export function More() {
-  const [view, setView] = useState<View>('calendar')
+  // Acts as the Settings screen now. Calendar + Peptides moved to Progress.
   return (
     <div className="pb-32">
-      <Header title="More" subtitle="Calendar, peptides, settings" />
-      <div className="px-4 mb-3">
-        <Segmented<View>
-          options={[
-            { value: 'calendar', label: 'Calendar' },
-            { value: 'peptides', label: 'Peptides' },
-            { value: 'settings', label: 'Settings' },
-          ]}
-          value={view}
-          onChange={setView}
-        />
-      </div>
-      <ErrorBoundary fallbackLabel={`${view} hit a bug.`}>
-        {view === 'calendar' && <CalendarTab />}
-        {view === 'peptides' && <PeptidesTab />}
-        {view === 'settings' && <SettingsTab />}
+      <Header title="Settings" subtitle="Make it yours" />
+      <ErrorBoundary fallbackLabel="Settings hit a bug.">
+        <SettingsTab />
       </ErrorBoundary>
     </div>
   )
 }
 
 // ---------- CALENDAR ----------
-function CalendarTab() {
+export function CalendarTab() {
   const sessions = useLiveQuery(() => db.workoutSessions.toArray(), [])
   const logEntries = useLiveQuery(() => db.logEntries.toArray(), [])
   const foods = useLiveQuery(() => db.foods.toArray(), [])
@@ -131,7 +116,7 @@ function CalendarTab() {
 }
 
 // ---------- PEPTIDES ----------
-function PeptidesTab() {
+export function PeptidesTab() {
   // Defensive queries — avoid chained Collection ops that can be brittle.
   const peptides = useLiveQuery(async () => {
     const all = await db.peptides.toArray()

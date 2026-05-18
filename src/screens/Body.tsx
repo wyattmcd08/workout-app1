@@ -38,7 +38,7 @@ export function Body() {
 }
 
 // ---------- RECOVERY ----------
-function Recovery() {
+export function Recovery() {
   const sets = useLiveQuery(() => db.workoutSets.toArray(), [])
   const exercises = useLiveQuery(() => db.exercises.toArray(), [])
   const metrics = useLiveQuery(() => db.metrics.toArray(), [])
@@ -138,7 +138,7 @@ function LogMetricSheet({ onClose }: { onClose: () => void }) {
 }
 
 // ---------- MEASUREMENTS ----------
-function Measurements() {
+export function Measurements() {
   const settings = useLiveQuery(() => getSettings(), [])
   const measurements = useLiveQuery(() => db.measurements.toArray(), [])
   const [editing, setEditing] = useState<BodyMeasurement | 'new' | null>(null)
@@ -318,7 +318,7 @@ function MeasurementEditor({ editing, onClose }: { editing: BodyMeasurement | 'n
 }
 
 // ---------- PHOTOS ----------
-function Photos() {
+export function Photos() {
   const photos = useLiveQuery(() => db.photos.orderBy('date').reverse().toArray(), [])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [viewingId, setViewingId] = useState<number | null>(null)

@@ -47,23 +47,134 @@ export interface LogEntry {
 }
 
 // ---- Workouts ----
+export type ExerciseCategory =
+  | 'chest' | 'back' | 'shoulders' | 'legs' | 'arms' | 'core'
+  | 'cardio' | 'conditioning' | 'mobility' | 'olympic' | 'bodyweight' | 'other'
+
+export const CATEGORY_LABELS: Record<ExerciseCategory, string> = {
+  chest: 'Chest', back: 'Back', shoulders: 'Shoulders', legs: 'Legs',
+  arms: 'Arms', core: 'Core', cardio: 'Cardio', conditioning: 'Conditioning',
+  mobility: 'Mobility', olympic: 'Olympic', bodyweight: 'Bodyweight', other: 'Other',
+}
+
+export type Equipment =
+  | 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | 'kettlebell'
+  | 'band' | 'sled' | 'sandbag' | 'bike' | 'rower' | 'treadmill' | 'jumprope' | 'box' | 'plate' | 'other'
+
+export const EQUIPMENT_LABELS: Record<Equipment, string> = {
+  barbell: 'Barbell', dumbbell: 'Dumbbell', cable: 'Cable', machine: 'Machine',
+  bodyweight: 'Bodyweight', kettlebell: 'Kettlebell', band: 'Band',
+  sled: 'Sled', sandbag: 'Sandbag', bike: 'Bike', rower: 'Rower',
+  treadmill: 'Treadmill', jumprope: 'Jump rope', box: 'Box', plate: 'Plate', other: 'Other',
+}
+
+export type MovementPattern =
+  | 'push' | 'pull' | 'squat' | 'hinge' | 'carry' | 'lunge'
+  | 'rotation' | 'gait' | 'core' | 'cardio' | 'other'
+
+export const MOVEMENT_LABELS: Record<MovementPattern, string> = {
+  push: 'Push', pull: 'Pull', squat: 'Squat', hinge: 'Hinge', carry: 'Carry',
+  lunge: 'Lunge', rotation: 'Rotation', gait: 'Gait', core: 'Core', cardio: 'Cardio', other: 'Other',
+}
+
+export type Difficulty = 'beginner' | 'intermediate' | 'advanced'
+
+export type ExerciseMetric = 'reps' | 'weight' | 'duration' | 'distance' | 'pace' | 'calories'
+
 export interface Exercise {
   id?: number
   name: string
   primary: MuscleGroup
   secondary: MuscleGroup[]
   notes?: string
+  instructions?: string
+  category?: ExerciseCategory
+  equipment?: Equipment
+  movement?: MovementPattern
+  difficulty?: Difficulty
+  metrics?: ExerciseMetric[]   // which metrics this exercise tracks (default: ['reps','weight'])
+  favorite?: 1 | 0
+  lastUsedAt?: number
+  demoUrl?: string
   custom?: 1 | 0
   createdAt: number
+}
+
+// Block-based templates support workouts beyond linear lifting.
+export type BlockType = 'warmup' | 'strength' | 'conditioning' | 'cardio' | 'cooldown'
+
+export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
+  warmup: 'Warm-up', strength: 'Strength', conditioning: 'Conditioning',
+  cardio: 'Cardio', cooldown: 'Cool-down',
+}
+
+export type BlockFormat =
+  | 'standard'    // straight sets
+  | 'circuit'     // do all exercises in order, repeat for rounds
+  | 'superset'    // alternate between exercises, repeat for rounds
+  | 'emom'        // every minute on the minute — execute the list each interval
+  | 'amrap'       // as many rounds as possible in time cap
+  | 'tabata'      // 20s work / 10s rest × 8 typically
+  | 'fortime'     // complete the work as fast as possible (stopwatch)
+  | 'interval'    // generic work/rest intervals
+
+export const BLOCK_FORMAT_LABELS: Record<BlockFormat, string> = {
+  standard: 'Straight sets', circuit: 'Circuit', superset: 'Superset',
+  emom: 'EMOM', amrap: 'AMRAP', tabata: 'Tabata',
+  fortime: 'For Time', interval: 'Interval',
+}
+
+export interface BlockExercise {
+  exerciseId: number
+  // Prescription (all optional — the block format decides which apply)
+  sets?: number
+  reps?: number                 // numeric reps target
+  repsText?: string             // free-form (e.g. "max", "8-12")
+  weight?: number               // weight target (lb/kg per settings)
+  durationSec?: number          // for timed exercises
+  distanceM?: number            // meters
+  calories?: number             // bike/rower kcal
+  restSec?: number              // rest after this exercise (standard sets)
+  notes?: string
+}
+
+export interface WorkoutBlock {
+  id: string                    // local uuid (no DB row)
+  type: BlockType
+  format: BlockFormat
+  name?: string
+  notes?: string
+  // Format-specific parameters (all optional)
+  timeCapSec?: number          // AMRAP / For Time / interval
+  intervalSec?: number         // EMOM (e.g. 60)
+  workSec?: number             // Tabata or generic interval work
+  restSec?: number             // Tabata or generic interval rest
+  rounds?: number              // Circuit / Superset / Tabata
+  exercises: BlockExercise[]
 }
 
 // A template (e.g. "Push Day A") groups exercises in order with prescribed sets/reps.
 export interface WorkoutTemplate {
   id?: number
   name: string
-  dayLabel?: string // e.g. "Mon", "Day 1"
+  dayLabel?: string             // e.g. "Mon", "Day 1"
   order: number
   notes?: string
+  blocks?: WorkoutBlock[]       // new block-based format — when present, used instead of templateExercises
+  favorite?: 1 | 0
+  programId?: number
+  createdAt: number
+}
+
+// Multi-week training program — groups templates.
+export interface Program {
+  id?: number
+  name: string
+  description?: string
+  weeks?: number
+  templateIds: number[]         // ordered list of WorkoutTemplate ids
+  active?: 1 | 0
+  startDate?: string
   createdAt: number
 }
 
@@ -99,6 +210,12 @@ export interface WorkoutSet {
   setIndex: number
   weight: number
   reps: number
+  // Beyond classic lifting:
+  durationSec?: number
+  distanceM?: number
+  calories?: number
+  blockId?: string             // which block this set belongs to (if block-based)
+  round?: number               // for AMRAP/circuit — which round
   rpe?: number
   isPr?: 1 | 0
   completed: 1 | 0
@@ -218,6 +335,7 @@ export const db = new Dexie('dialed-dawg') as Dexie & {
   templateExercises: EntityTable<TemplateExercise, 'id'>
   workoutSessions: EntityTable<WorkoutSession, 'id'>
   workoutSets: EntityTable<WorkoutSet, 'id'>
+  programs: EntityTable<Program, 'id'>
   measurements: EntityTable<BodyMeasurement, 'id'>
   photos: EntityTable<ProgressPhoto, 'id'>
   metrics: EntityTable<DailyMetric, 'id'>
@@ -234,6 +352,24 @@ db.version(1).stores({
   templateExercises: '++id, templateId, order',
   workoutSessions: '++id, date, templateId',
   workoutSets: '++id, sessionId, exerciseId',
+  measurements: '++id, &date',
+  photos: '++id, date, view',
+  metrics: '++id, &date',
+  peptides: '++id, name, active',
+  peptideDoses: '++id, peptideId, date',
+  settings: 'id',
+})
+
+// v2 — adds programs, additional indexes on exercises and templates
+db.version(2).stores({
+  foods: '++id, name, favorite, createdAt',
+  logEntries: '++id, date, meal, foodId',
+  exercises: '++id, name, primary, category, equipment, favorite, lastUsedAt',
+  workoutTemplates: '++id, order, name, favorite, programId',
+  templateExercises: '++id, templateId, order',
+  workoutSessions: '++id, date, templateId',
+  workoutSets: '++id, sessionId, exerciseId, blockId',
+  programs: '++id, name, active',
   measurements: '++id, &date',
   photos: '++id, date, view',
   metrics: '++id, &date',

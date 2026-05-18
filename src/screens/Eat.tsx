@@ -20,7 +20,7 @@ export function Eat() {
   return (
     <div className="pb-32">
       <Header
-        title="Fuel"
+        title="Nutrition"
         subtitle="Eat with intent"
         right={
           <button
