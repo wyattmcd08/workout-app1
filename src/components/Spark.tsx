@@ -23,7 +23,7 @@ export function Spark({ data, color = 'var(--color-accent)', height = 60, showAx
         {showAxes && (
           <XAxis
             dataKey="date"
-            tickFormatter={(d) => d.slice(5)}
+            tickFormatter={(d: string) => d.slice(5)}
             tick={{ fontSize: 10, fill: '#9a9aa3' }}
             stroke="#26262a"
           />
