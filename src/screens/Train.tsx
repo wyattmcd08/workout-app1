@@ -18,6 +18,8 @@ import { PrimaryButton } from '../components/PrimaryButton'
 import { Spark } from '../components/Spark'
 import { EmptyState, EmptyIcons } from '../components/EmptyState'
 import { AnimatedCheck } from '../components/AnimatedCheck'
+import { WorkoutBuilder } from './WorkoutBuilder'
+import { WorkoutRun } from './WorkoutRun'
 
 type View = 'today' | 'split' | 'progress'
 
@@ -52,6 +54,13 @@ function TodayWorkout() {
   const units = settings?.units ?? 'imperial'
   const exercises = useLiveQuery(() => db.exercises.toArray(), [])
   const templates = useLiveQuery(() => db.workoutTemplates.orderBy('order').toArray(), [])
+  // If the current session was started from a block-based template, render WorkoutRun.
+  const activeTemplate = useLiveQuery<WorkoutTemplate | undefined>(
+    () => session?.templateId
+      ? db.workoutTemplates.get(session.templateId)
+      : Promise.resolve<WorkoutTemplate | undefined>(undefined),
+    [session?.templateId],
+  )
   const templateExercises = useLiveQuery<TemplateExercise[]>(
     () => session?.templateId
       ? db.templateExercises.where('templateId').equals(session.templateId).sortBy('order')
@@ -103,6 +112,21 @@ function TodayWorkout() {
     if (!session || !confirm('Discard this session and all logged sets?')) return
     await db.workoutSets.where('sessionId').equals(session.id!).delete()
     await db.workoutSessions.delete(session.id!)
+  }
+
+  // If this session uses a block-based template, route to WorkoutRun
+  if (session && activeTemplate && activeTemplate.blocks && activeTemplate.blocks.length > 0) {
+    return (
+      <WorkoutRun
+        session={session}
+        blocks={activeTemplate.blocks}
+        onFinish={async () => {
+          await db.workoutSessions.update(session.id!, { endedAt: Date.now() })
+          setSummaryOpen(true)
+          haptic('success')
+        }}
+      />
+    )
   }
 
   if (!session) {
@@ -1142,15 +1166,10 @@ function ExerciseDetailSheet({ editing, onClose }: { editing: Exercise | 'new'; 
 function SplitPlanner() {
   const templates = useLiveQuery(() => db.workoutTemplates.orderBy('order').toArray(), [])
   const [editing, setEditing] = useState<WorkoutTemplate | 'new' | null>(null)
+  const [legacyEditing, setLegacyEditing] = useState<WorkoutTemplate | null>(null)
 
   async function addTemplate() {
-    const order = (templates?.length ?? 0) + 1
-    const id = await db.workoutTemplates.add({
-      name: `Day ${order}`,
-      order,
-      createdAt: Date.now(),
-    })
-    setEditing((await db.workoutTemplates.get(Number(id)))!)
+    setEditing('new')
   }
 
   async function duplicate(t: WorkoutTemplate) {
@@ -1187,7 +1206,12 @@ function SplitPlanner() {
         <TemplateCard
           key={t.id}
           template={t}
-          onOpen={() => setEditing(t)}
+          onOpen={() => {
+            // Open block-based builder if template uses blocks OR is freshly created;
+            // open legacy editor for old templates that only have templateExercises.
+            if (t.blocks && t.blocks.length > 0) setEditing(t)
+            else setLegacyEditing(t)
+          }}
           onDuplicate={() => duplicate(t)}
           onDelete={() => remove(t)}
         />
@@ -1197,9 +1221,15 @@ function SplitPlanner() {
       )}
 
       {editing && (
-        <TemplateEditor
-          template={editing === 'new' ? null : editing}
+        <WorkoutBuilder
+          template={editing}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {legacyEditing && (
+        <TemplateEditor
+          template={legacyEditing}
+          onClose={() => setLegacyEditing(null)}
         />
       )}
     </div>
