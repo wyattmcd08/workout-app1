@@ -291,28 +291,82 @@ a { color: inherit; }
  * type rhythm, and density. Shared primitives, different "modes."
  * ============================================================ */
 
-/* HOME = Command Center: airy, big, glanceable */
+/* HOME = Command Center: airy, big, glanceable.
+   Generous breathing room, larger display type, more padding inside cards. */
 .page-home { padding-top: 4px; }
-.page-home .display { letter-spacing: -0.05em; }
-.page-home h2, .page-home h3 { letter-spacing: 0.2em; font-weight: 800; }
+.page-home > div { row-gap: 18px; }
+.page-home .display {
+  letter-spacing: -0.05em;
+  font-weight: 900;
+}
+.page-home .display-num { letter-spacing: -0.04em; }
+.page-home .card,
+.page-home .card-paper,
+.page-home .card-accent,
+.page-home .card-soft { padding: 22px; }
+.page-home .eyebrow { font-size: 11px; letter-spacing: 0.24em; }
+/* Stronger radial glow when on Home */
+body:has(.page-home)::before { opacity: 1.05; }
 
-/* PROGRESS = Analytics: cooler accents, denser data, less radial glow */
+/* WORKOUTS = Builder Lab: dense, structured, functional.
+   Tight cards, sharper corners, all-business spacing. */
+.page-workouts { padding-top: 0; }
+.page-workouts .card,
+.page-workouts .card-soft { border-radius: 14px; padding: 14px; }
+.page-workouts .eyebrow { letter-spacing: 0.22em; opacity: 0.9; }
+.page-workouts .display { letter-spacing: -0.03em; }
+/* Slightly muted accent glow — feels like a workbench, not a celebration */
+body:has(.page-workouts)::before { opacity: 0.55; }
+
+/* EXERCISES = Library: catalog/database feel.
+   Compact uniform rows, tighter type, less ornament. */
+.page-exercises .card { padding: 12px 14px; border-radius: 12px; }
+.page-exercises .display { font-weight: 800; letter-spacing: -0.01em; text-transform: none; }
+.page-exercises .eyebrow { font-size: 9.5px; letter-spacing: 0.2em; }
+/* Mute the glow further — this is a directory, not a hero screen */
+body:has(.page-exercises)::before { opacity: 0.4; }
+
+/* PROGRESS = Analytics: muted, cool-tinted, data-forward.
+   Cooler bluish bias, lower contrast, charts feel like the subject. */
 .page-progress {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 200px),
+    linear-gradient(180deg, rgba(80, 100, 140, 0.045) 0%, transparent 280px),
     var(--color-bg);
 }
-.page-progress .display { letter-spacing: -0.02em; font-weight: 800; }
-.page-progress .card { background: var(--color-surface); border-color: var(--color-border); }
-/* Mute the body radial glow when on Progress — different mood */
-body:has(.page-progress)::before { opacity: 0.35; }
+.page-progress .display {
+  letter-spacing: -0.015em;
+  font-weight: 800;
+  text-transform: none;
+}
+.page-progress .display-num { letter-spacing: -0.02em; }
+.page-progress .eyebrow { color: #7a8aab; letter-spacing: 0.2em; }
+.page-progress .card {
+  background: var(--color-surface);
+  border: 1px solid #2a3142;
+  border-radius: 14px;
+}
+.page-progress h3 { color: #8a96b0; }
+/* Subtle dot grid background — analytics vibe */
+.page-progress::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+  background-image: radial-gradient(circle at 1px 1px, rgba(140, 160, 200, 0.06) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+.page-progress > * { position: relative; z-index: 1; }
+/* Kill the red radial accent glow on Progress — wrong mood */
+body:has(.page-progress)::before { opacity: 0.15; }
 
-/* WORKOUTS = Builder Lab: dense, structured, tighter spacing */
-.page-workouts .card { border-radius: 16px; }
-.page-workouts .eyebrow { letter-spacing: 0.22em; }
+/* SETTINGS = Calm: roomy form layout, gentle. */
+.page-settings .card { padding: 18px; border-radius: 16px; }
+.page-settings > div { row-gap: 14px; }
+body:has(.page-settings)::before { opacity: 0.5; }
 
-/* EXERCISES = Library: catalog-grid, smaller cards */
-.page-exercises .card { padding: 12px 14px; }
-
-/* SETTINGS = Calm: roomy form layout */
-.page-settings .card { padding: 18px; }
+/* NUTRITION = Fuel log: warmer cream tint, paper-card hero feel. */
+.page-nutrition .display { font-weight: 900; letter-spacing: -0.04em; }
+.page-nutrition .card { border-radius: 16px; }
+body:has(.page-nutrition)::before { opacity: 0.7; }

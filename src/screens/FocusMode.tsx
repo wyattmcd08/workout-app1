@@ -239,7 +239,9 @@ function CircuitFocus({ block, session, exById, onComplete }: {
   block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise>; onComplete: () => void
 }) {
   const totalRounds = block.rounds ?? 3
-  const [round, setRound] = useState(1)
+  // Hydrate round number from session.state if present so refresh doesn't lose progress.
+  const persistedRound = (session.state?.blockProgress?.[block.id]?.completedRounds ?? 0) + 1
+  const [round, setRound] = useState(persistedRound)
   const [done, setDone] = useState<boolean[]>(() => block.exercises.map(() => false))
 
   function tick(i: number) {
@@ -249,6 +251,7 @@ function CircuitFocus({ block, session, exById, onComplete }: {
     haptic('tap')
     if (next.every(Boolean)) {
       void recordRound({ sessionId: session.id!, blockId: block.id, round })
+      void setBlockProgress(session.id!, block.id, { completedRounds: round, isCompleted: round >= totalRounds })
       if (round >= totalRounds) {
         haptic('success')
         toast.show({ title: `${totalRounds} rounds done`, variant: 'success' })
@@ -281,8 +284,10 @@ function CircuitFocus({ block, session, exById, onComplete }: {
 function ForTimeFocus({ block, session, exById, onComplete }: {
   block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise>; onComplete: () => void
 }) {
+  const initial = session.state?.blockProgress?.[block.id]
   const engine = useBlockEngine({
     block,
+    initial,
     onTickPersist: (snap) => setBlockProgress(session.id!, block.id, snap).catch(() => {}),
     onExpire: () => {},
   })
@@ -338,8 +343,10 @@ function ForTimeFocus({ block, session, exById, onComplete }: {
 function CountdownFocus({ block, session, exById, onComplete }: {
   block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise>; onComplete: () => void
 }) {
+  const initial = session.state?.blockProgress?.[block.id]
   const engine = useBlockEngine({
     block,
+    initial,
     onTickPersist: (snap) => setBlockProgress(session.id!, block.id, snap).catch(() => {}),
     onRoundComplete: (n) => {
       haptic('chime')

@@ -18,7 +18,7 @@ export function Eat() {
   const [view, setView] = useState<View>('today')
 
   return (
-    <div className="pb-32">
+    <div className="pb-32 page-nutrition">
       <Header
         title="Nutrition"
         subtitle="Eat with intent"
