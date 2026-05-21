@@ -80,3 +80,12 @@ export async function reorderExerciseInSession(sessionId: number, exerciseId: nu
   ;[order[i], order[j]] = [order[j], order[i]]
   await db.workoutSessions.update(sessionId, { customOrder: order })
 }
+
+// Recent completed sessions, newest first.
+export async function getRecentSessions(limit = 10): Promise<WorkoutSession[]> {
+  const all = await db.workoutSessions.toArray()
+  return all
+    .filter((s) => s.endedAt != null)
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    .slice(0, limit)
+}

@@ -1,4 +1,4 @@
-import { db, type WorkoutTemplate, type WorkoutBlock } from '../db'
+import { db, type WorkoutTemplate, type WorkoutBlock, type WorkoutSession } from '../db'
 
 export async function createWorkout(input: Omit<WorkoutTemplate, 'id' | 'createdAt'>): Promise<WorkoutTemplate> {
   const id = await db.workoutTemplates.add({ ...input, createdAt: Date.now() })
@@ -27,6 +27,44 @@ export async function duplicateWorkout(id: number): Promise<WorkoutTemplate | nu
     await db.templateExercises.bulkAdd(tes.map((te) => ({ ...te, id: undefined, templateId: Number(newId) })))
   }
   return (await db.workoutTemplates.get(Number(newId)))!
+}
+
+export interface WorkoutStats {
+  lastPerformedAt?: number
+  totalVolume: number      // Σ weight×reps across all sessions of this template
+  prCount: number          // count of WorkoutSet rows with isPr=1
+  sessionCount: number
+}
+
+export async function getWorkoutStats(templateId: number): Promise<WorkoutStats> {
+  const sessions = (await db.workoutSessions.toArray()).filter((s) => s.templateId === templateId)
+  const sessionIds = new Set(sessions.map((s) => s.id!))
+  let totalVolume = 0
+  let prCount = 0
+  const allSets = await db.workoutSets.toArray()
+  for (const s of allSets) {
+    if (!sessionIds.has(s.sessionId)) continue
+    if (s.completed !== 1) continue
+    if (s.kind === 'set' || !s.kind) totalVolume += (s.weight ?? 0) * (s.reps ?? 0)
+    if (s.isPr === 1) prCount++
+  }
+  const lastPerformedAt = sessions
+    .filter((s) => s.endedAt != null)
+    .reduce((max: number | undefined, s) => Math.max(max ?? 0, s.endedAt!), undefined as number | undefined)
+  return { lastPerformedAt, totalVolume, prCount, sessionCount: sessions.length }
+}
+
+export async function getSessionStats(session: WorkoutSession): Promise<{ volume: number; sets: number; prs: number; durationMin: number }> {
+  const sets = await db.workoutSets.where('sessionId').equals(session.id!).toArray()
+  const completed = sets.filter((s) => s.completed === 1)
+  let volume = 0
+  let prs = 0
+  for (const s of completed) {
+    if (s.kind === 'set' || !s.kind) volume += (s.weight ?? 0) * (s.reps ?? 0)
+    if (s.isPr === 1) prs++
+  }
+  const durationMs = (session.endedAt ?? Date.now()) - session.startedAt
+  return { volume, sets: completed.length, prs, durationMin: Math.max(1, Math.round(durationMs / 60000)) }
 }
 
 // Resolve a template's blocks — used as a single source of truth by runners.
