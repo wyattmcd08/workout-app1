@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type WorkoutBlock, type WorkoutSession, type WorkoutTemplate } from '../db'
 import { today } from '../lib/date'
-import { getRecentSessions, startFromTemplate } from '../services/sessions'
+import { getRecentSessions, startFromTemplate, ensureSessionHasTemplate } from '../services/sessions'
 import { getBlocksForTemplate, getSessionStats } from '../services/workouts'
 import { toast } from '../lib/toast'
 import { haptic } from '../lib/haptic'
@@ -27,8 +27,15 @@ export function TrainView({ onEnterFocus }: Props) {
   const recent = useLiveQuery(() => getRecentSessions(10), [])
 
   async function resume() {
-    if (!activeSession?.templateId) return
-    const blocks = await getBlocksForTemplate(activeSession.templateId)
+    if (!activeSession) return
+    // Orphan-session recovery: auto-create a virtual template if missing.
+    const repaired = await ensureSessionHasTemplate(activeSession)
+    const blocks = repaired.templateId
+      ? await getBlocksForTemplate(repaired.templateId)
+      : []
+    if (blocks.length === 0) {
+      toast.show({ title: 'Session was empty — added a default block', variant: 'success' })
+    }
     onEnterFocus?.(blocks)
   }
 

@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { db, type WorkoutBlock, type WorkoutTemplate } from './db'
 import { today } from './lib/date'
 import { getBlocksForTemplate } from './services/workouts'
+import { ensureSessionHasTemplate } from './services/sessions'
 import { seedIfEmpty } from './db/seed'
 import { getSettings } from './db'
 import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup'
@@ -126,12 +127,21 @@ export default function App() {
   }
 
   // Focus Mode takes over the screen when active. No tab bar.
-  if (focusMode && activeSession && focusBlocks.length > 0) {
+  if (focusMode && activeSession) {
+    if (focusBlocks.length > 0) {
+      return (
+        <>
+          <FocusMode session={activeSession} blocks={focusBlocks} onExit={() => setFocusMode(false)} />
+          <Toaster />
+        </>
+      )
+    }
+    // Recovery in progress (orphan session waiting on template) — brief loader
     return (
-      <>
-        <FocusMode session={activeSession} blocks={focusBlocks} onExit={() => setFocusMode(false)} />
+      <div className="fixed inset-0 z-50 bg-[var(--color-bg)] flex items-center justify-center">
+        <div className="text-[var(--color-text-faint)] text-xs uppercase tracking-[0.3em] animate-pulse">Loading workout…</div>
         <Toaster />
-      </>
+      </div>
     )
   }
 
@@ -150,10 +160,16 @@ export default function App() {
         </ErrorBoundary>
       </div>
 
-      {/* Active workout floating CTA — quick re-entry into Focus Mode */}
-      {activeSession && focusBlocks.length > 0 && (
+      {/* Active workout floating CTA — quick re-entry into Focus Mode.
+          Shown whenever there's an active session; clicking triggers an
+          orphan-recovery (auto-create template) if needed before opening. */}
+      {activeSession && (
         <button
-          onClick={() => setFocusMode(true)}
+          onClick={async () => {
+            // Auto-recover orphan sessions (no templateId or missing template)
+            await ensureSessionHasTemplate(activeSession)
+            setFocusMode(true)
+          }}
           className="fixed left-4 right-4 z-30 card-accent p-3 flex items-center justify-between active:scale-[0.98] transition-transform shadow-[0_12px_40px_-12px_var(--color-accent)]"
           style={{ bottom: 'calc(env(safe-area-inset-bottom) + 80px)' }}
         >

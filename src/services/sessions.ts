@@ -1,4 +1,4 @@
-import { db, type WorkoutSession, type WorkoutTemplate, type SessionState, type BlockProgress } from '../db'
+import { db, type WorkoutSession, type WorkoutTemplate, type WorkoutBlock, type SessionState, type BlockProgress } from '../db'
 
 export async function getActiveSessionForDate(dateISO: string): Promise<WorkoutSession | undefined> {
   return db.workoutSessions.where('date').equals(dateISO).first()
@@ -79,6 +79,33 @@ export async function reorderExerciseInSession(sessionId: number, exerciseId: nu
   if (j < 0 || j >= order.length) return
   ;[order[i], order[j]] = [order[j], order[i]]
   await db.workoutSessions.update(sessionId, { customOrder: order })
+}
+
+// Repair an orphan session (no templateId). Older Quick Start sessions and
+// any session whose template was deleted out from under it land here. We
+// auto-create a one-off template with an empty strength block and link it.
+// Returns the (possibly updated) session.
+export async function ensureSessionHasTemplate(session: WorkoutSession): Promise<WorkoutSession> {
+  if (session.templateId) {
+    const t = await db.workoutTemplates.get(session.templateId)
+    if (t) return session   // template exists; nothing to do
+  }
+  const block: WorkoutBlock = {
+    id: Math.random().toString(36).slice(2, 10),
+    type: 'strength',
+    format: 'standard',
+    name: session.name,
+    exercises: [],
+  }
+  const tid = await db.workoutTemplates.add({
+    name: session.name || 'Workout',
+    order: Date.now(),
+    blocks: [block],
+    favorite: 0,
+    createdAt: Date.now(),
+  })
+  await db.workoutSessions.update(session.id!, { templateId: Number(tid) })
+  return { ...session, templateId: Number(tid) }
 }
 
 // Recent completed sessions, newest first.
