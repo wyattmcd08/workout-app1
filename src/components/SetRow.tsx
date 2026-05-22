@@ -13,13 +13,14 @@ interface Props {
   isActive?: boolean           // is this the next set to log? (UI highlight)
   onSet: (values: { weight: number; reps: number }, completed: boolean) => Promise<{ isPr: boolean }> | void
   onDelete?: () => void
+  onReplace?: () => void       // swipe-right action — replace the parent exercise
   onComplete?: () => void      // hook for auto-focus on next set
 }
 
 // Fitbod-style row:
 //   SET | PREVIOUS | LB | REPS | ✓
 // All inline editable. PREVIOUS is tappable to copy. Quick +5/-5 chips on weight focus.
-export function SetRow({ idx, current, lastSet, prescription, units, isActive, onSet, onDelete, onComplete }: Props) {
+export function SetRow({ idx, current, lastSet, prescription, units, isActive, onSet, onDelete, onReplace, onComplete }: Props) {
   const completed = current?.completed === 1
   const isPr = current?.isPr === 1
   const [weight, setWeight] = useState(String(current?.weight ?? ''))
@@ -40,6 +41,7 @@ export function SetRow({ idx, current, lastSet, prescription, units, isActive, o
 
   const swipe = useSwipeAction({
     onLeft: () => { if (onDelete) { haptic('tap'); onDelete() } },
+    onRight: () => { if (onReplace) { haptic('tap'); onReplace() } },
   })
 
   const wn = Number(weight) || 0
@@ -95,19 +97,28 @@ export function SetRow({ idx, current, lastSet, prescription, units, isActive, o
 
   return (
     <div className="relative overflow-hidden rounded-xl">
-      {/* Red delete tile revealed on swipe-left */}
+      {/* Red delete tile (swipe-left) */}
       {onDelete && (
         <div
           className="absolute inset-y-0 right-0 flex items-center justify-end pr-4 text-white text-xs font-bold uppercase tracking-wider"
           style={{ background: 'var(--color-accent)', width: Math.max(0, -swipe.dx) }}
         >
-          {swipe.dx <= -60 ? 'Release' : null}
+          {swipe.dx <= -60 ? 'Delete' : null}
+        </div>
+      )}
+      {/* Green replace tile (swipe-right) */}
+      {onReplace && (
+        <div
+          className="absolute inset-y-0 left-0 flex items-center justify-start pl-4 text-white text-xs font-bold uppercase tracking-wider"
+          style={{ background: '#22c55e', width: Math.max(0, swipe.dx) }}
+        >
+          {swipe.dx >= 60 ? 'Replace' : null}
         </div>
       )}
       <div
-        {...(onDelete ? swipe.bind : {})}
+        {...((onDelete || onReplace) ? swipe.bind : {})}
         style={{
-          transform: swipe.dx < 0 ? `translateX(${swipe.dx}px)` : undefined,
+          transform: swipe.dx !== 0 ? `translateX(${swipe.dx}px)` : undefined,
           transition: swipe.active ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
         className={`relative px-1 py-1.5 ${completed ? 'opacity-65' : ''} ${isActive && !completed ? 'bg-[var(--color-accent-soft)]/30' : ''} ${flash ? 'animate-pr-flash' : ''} rounded-xl`}

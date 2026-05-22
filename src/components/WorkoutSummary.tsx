@@ -16,6 +16,7 @@ interface SummaryData {
   durationMin: number
   caloriesEst: number
   muscleBreakdown: { muscle: MuscleGroup; sets: number }[]
+  streak: number              // consecutive days with a completed workout ending today
 }
 
 // End-of-workout summary. Shown after Finish is tapped. Reads sets + exercises
@@ -68,8 +69,21 @@ export function WorkoutSummary({ session, onClose }: Props) {
         .map(([muscle, sets]) => ({ muscle, sets: Math.round(sets * 10) / 10 }))
         .sort((a, b) => b.sets - a.sets)
 
+      // Streak: consecutive days ending today with at least one completed session.
+      const allSessions = await db.workoutSessions.toArray()
+      const completedDates = new Set(
+        allSessions.filter((s) => s.endedAt != null).map((s) => s.date),
+      )
+      const todayMs = Date.now()
+      let streak = 0
+      for (let i = 0; i < 365; i++) {
+        const d = new Date(todayMs - i * 86_400_000).toISOString().slice(0, 10)
+        if (completedDates.has(d)) streak++
+        else if (i > 0) break // allow today to be missing (current workout already counted)
+      }
+
       if (!cancel) {
-        setData({ volume, setsCompleted: completed.length, prs, durationMin, caloriesEst, muscleBreakdown })
+        setData({ volume, setsCompleted: completed.length, prs, durationMin, caloriesEst, muscleBreakdown, streak })
       }
     })()
     return () => { cancel = true }
@@ -97,10 +111,11 @@ export function WorkoutSummary({ session, onClose }: Props) {
             {Math.round(data.volume).toLocaleString()}
             <span className="text-base font-bold ml-2 text-[var(--color-ink-dim)]">LB</span>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="grid grid-cols-4 gap-2 mt-4">
             <Tile label="Duration" value={`${data.durationMin}m`} />
             <Tile label="Sets" value={String(data.setsCompleted)} />
             <Tile label="Calories" value={`~${data.caloriesEst}`} />
+            <Tile label={data.streak >= 2 ? `🔥 Streak` : 'Streak'} value={`${data.streak}d`} />
           </div>
         </div>
 

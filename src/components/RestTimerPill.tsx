@@ -14,9 +14,11 @@ interface Props {
 export function RestTimerPill({ initialSec, onClose }: Props) {
   const [remaining, setRemaining] = useState(initialSec)
   const [overshoot, setOvershoot] = useState(0)
+  const [paused, setPaused] = useState(false)
   const chimedRef = useRef(false)
 
   useEffect(() => {
+    if (paused) return
     const id = setInterval(() => {
       setRemaining((s) => {
         const next = s - 1
@@ -30,7 +32,7 @@ export function RestTimerPill({ initialSec, onClose }: Props) {
       })
     }, 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [paused])
 
   const countingUp = remaining <= 0
   const display = countingUp ? overshoot : Math.max(0, remaining)
@@ -50,14 +52,18 @@ export function RestTimerPill({ initialSec, onClose }: Props) {
           aria-label="Subtract 10 seconds"
         >−10</button>
 
-        <div className="px-3 flex items-center gap-2 min-w-[110px] justify-center">
+        <button
+          onClick={() => { setPaused((p) => !p); haptic('tap') }}
+          className="px-3 flex items-center gap-2 min-w-[110px] justify-center active:bg-[var(--color-surface-2)] rounded-full py-1"
+          aria-label={paused ? 'Resume rest timer' : 'Pause rest timer'}
+        >
           <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--color-text-faint)]">
-            {countingUp ? 'Rested' : 'Rest'}
+            {paused ? 'Paused' : countingUp ? 'Rested' : 'Rest'}
           </span>
-          <span className={`display-num tabnum ${isWarning ? 'text-[var(--color-accent)] animate-pulse' : ''}`} style={{ fontSize: 18 }}>
+          <span className={`display-num tabnum ${isWarning && !paused ? 'text-[var(--color-accent)] animate-pulse' : paused ? 'text-[var(--color-text-dim)]' : ''}`} style={{ fontSize: 18 }}>
             {m}:{String(s).padStart(2, '0')}
           </span>
-        </div>
+        </button>
 
         <button
           onClick={() => { setRemaining((s) => s + 30); haptic('tap'); chimedRef.current = false }}

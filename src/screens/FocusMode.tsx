@@ -13,6 +13,7 @@ import { toast } from '../lib/toast'
 import { SetRow } from '../components/SetRow'
 import { useWakeLock } from '../lib/useWakeLock'
 import { useLongPress } from '../lib/useLongPress'
+import { useKeyboardAware } from '../lib/useKeyboardAware'
 import { Sheet } from '../components/Sheet'
 import { ExerciseActionSheet, type ExerciseAction } from '../components/ExerciseActionSheet'
 import { RestTimerPill } from '../components/RestTimerPill'
@@ -39,6 +40,7 @@ export function FocusMode({ session, blocks, onExit }: Props) {
   )
 
   useWakeLock(true)
+  useKeyboardAware(true)
 
   const block = blocks[activeIdx]
   if (!block) {
@@ -313,6 +315,7 @@ function StandardFocus({ block, session, exById, onSetCompleted }: { block: Work
               units={units}
               onOpenActions={() => setActionFor(i)}
               onSetCompleted={onSetCompleted}
+              onReplace={() => setReplacingIdx(i)}
             />
           )
         })
@@ -416,7 +419,7 @@ function NoteEditor({ title, initial, onSave, onClose }: {
 }
 
 // ---------- EXERCISE CARD — Fitbod-style with PREVIOUS column ----------
-function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions, onSetCompleted }: {
+function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions, onSetCompleted, onReplace }: {
   block: WorkoutBlock
   blockExerciseIdx: number
   session: WorkoutSession
@@ -424,6 +427,7 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
   units: 'imperial' | 'metric'
   onOpenActions: () => void
   onSetCompleted?: (restSec: number) => void
+  onReplace?: () => void
 }) {
   const be = block.exercises[blockExerciseIdx]
   const sets = useLiveQuery<WorkoutSet[]>(
@@ -514,6 +518,7 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
                   units={units}
                   isActive={activeIdx === idx}
                   onDelete={cur ? () => db.workoutSets.delete(cur.id!) : undefined}
+                  onReplace={onReplace}
                   onSet={async (values, completed) => {
                     const res = await logSet({
                       sessionId: session.id!,
