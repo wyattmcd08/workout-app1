@@ -286,6 +286,14 @@ a { color: inherit; }
   to { transform: rotate(360deg); }
 }
 
+/* Insert new card with vertical squish */
+@keyframes card-insert {
+  0%   { max-height: 0; opacity: 0; transform: translateY(-6px) scale(0.97); }
+  60%  { max-height: 600px; opacity: 1; }
+  100% { max-height: 1000px; opacity: 1; transform: none; }
+}
+.animate-card-insert { animation: card-insert 380ms cubic-bezier(0.22, 1.18, 0.36, 1); }
+
 /* ============================================================
  * Page identities — each top-level tab has its own spacing,
  * type rhythm, and density. Shared primitives, different "modes."

@@ -14,6 +14,7 @@ import { SetRow } from '../components/SetRow'
 import { useWakeLock } from '../lib/useWakeLock'
 import { useLongPress } from '../lib/useLongPress'
 import { useKeyboardAware } from '../lib/useKeyboardAware'
+import { useDragReorder } from '../lib/useDragReorder'
 import { Sheet } from '../components/Sheet'
 import { ExerciseActionSheet, type ExerciseAction } from '../components/ExerciseActionSheet'
 import { RestTimerPill } from '../components/RestTimerPill'
@@ -225,6 +226,7 @@ function StandardFocus({ block, session, exById, onSetCompleted }: { block: Work
   const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
   const [actionFor, setActionFor] = useState<number | null>(null)
   const [noteFor, setNoteFor] = useState<number | null>(null)
+  const [insertedIds, setInsertedIds] = useState<Set<string>>(new Set())
 
   async function patchBlockExercises(mutator: (xs: BlockExercise[]) => BlockExercise[]) {
     if (!session.templateId) return
@@ -237,15 +239,24 @@ function StandardFocus({ block, session, exById, onSetCompleted }: { block: Work
   }
 
   async function addExerciseToBlock(exerciseIds: number[]) {
-    await patchBlockExercises((xs) => [
-      ...xs,
-      ...exerciseIds.map((id) => ({
-        id: Math.random().toString(36).slice(2, 10),
-        exerciseId: id,
-        sets: 3,
-        reps: 8,
-      })),
-    ])
+    const newBeIds: string[] = []
+    await patchBlockExercises((xs) => {
+      const toAdd = exerciseIds.map((id) => {
+        const beId = Math.random().toString(36).slice(2, 10)
+        newBeIds.push(beId)
+        return { id: beId, exerciseId: id, sets: 3, reps: 8 }
+      })
+      return [...xs, ...toAdd]
+    })
+    // Mark these as just-inserted so the card animates in
+    setInsertedIds((cur) => new Set([...cur, ...newBeIds]))
+    setTimeout(() => {
+      setInsertedIds((cur) => {
+        const next = new Set(cur)
+        for (const id of newBeIds) next.delete(id)
+        return next
+      })
+    }, 600)
     setPickerOpen(false)
     haptic('success')
     toast.show({ title: `Added ${exerciseIds.length} exercise${exerciseIds.length === 1 ? '' : 's'}`, variant: 'success' })
@@ -302,23 +313,17 @@ function StandardFocus({ block, session, exById, onSetCompleted }: { block: Work
           >+ Add exercise</button>
         </div>
       ) : (
-        block.exercises.map((be, i) => {
-          const ex = exById.get(be.exerciseId)
-          if (!ex) return null
-          return (
-            <ExerciseCard
-              key={be.id ?? `${be.exerciseId}-${i}`}
-              block={block}
-              blockExerciseIdx={i}
-              session={session}
-              ex={ex}
-              units={units}
-              onOpenActions={() => setActionFor(i)}
-              onSetCompleted={onSetCompleted}
-              onReplace={() => setReplacingIdx(i)}
-            />
-          )
-        })
+        <DraggableExerciseList
+          block={block}
+          exById={exById}
+          session={session}
+          units={units}
+          insertedIds={insertedIds}
+          onCommitOrder={(newExercises) => patchBlockExercises(() => newExercises)}
+          onOpenActions={(absIdx) => setActionFor(absIdx)}
+          onReplace={(absIdx) => setReplacingIdx(absIdx)}
+          onSetCompleted={onSetCompleted}
+        />
       )}
 
       {/* Floating "+ Exercise" button just above the block-navigation bar */}
@@ -418,8 +423,68 @@ function NoteEditor({ title, initial, onSave, onClose }: {
   )
 }
 
+// ---------- DRAGGABLE EXERCISE LIST ----------
+function DraggableExerciseList({ block, exById, session, units, insertedIds, onCommitOrder, onOpenActions, onReplace, onSetCompleted }: {
+  block: WorkoutBlock
+  exById: Map<number, Exercise>
+  session: WorkoutSession
+  units: 'imperial' | 'metric'
+  insertedIds: Set<string>
+  onCommitOrder: (next: BlockExercise[]) => Promise<void>
+  onOpenActions: (absIdx: number) => void
+  onReplace: (absIdx: number) => void
+  onSetCompleted?: (restSec: number) => void
+}) {
+  const { draggingId, dragY, displayed, bindHandle, registerEl } = useDragReorder<BlockExercise>({
+    items: block.exercises,
+    getId: (be) => be.id ?? `${be.exerciseId}`,
+    onCommit: onCommitOrder,
+  })
+
+  return (
+    <div className="space-y-3">
+      {displayed.map((be) => {
+        const ex = exById.get(be.exerciseId)
+        if (!ex) return null
+        const id = be.id ?? `${be.exerciseId}`
+        const isDragging = draggingId === id
+        // Find this card's absolute index in the ORIGINAL block.exercises (for actions)
+        const absIdx = block.exercises.findIndex((x) => (x.id ?? `${x.exerciseId}`) === id)
+        return (
+          <div
+            key={id}
+            ref={(el) => registerEl(id, el)}
+            className={insertedIds.has(id) ? 'animate-card-insert' : ''}
+            style={{
+              transform: isDragging ? `translateY(${dragY}px) scale(1.02)` : undefined,
+              boxShadow: isDragging ? '0 16px 40px -8px rgba(0,0,0,0.5)' : undefined,
+              opacity: isDragging ? 0.95 : 1,
+              transition: isDragging ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+              zIndex: isDragging ? 20 : 'auto',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <ExerciseCard
+              block={block}
+              blockExerciseIdx={absIdx >= 0 ? absIdx : 0}
+              session={session}
+              ex={ex}
+              units={units}
+              onOpenActions={() => onOpenActions(absIdx)}
+              onSetCompleted={onSetCompleted}
+              onReplace={() => onReplace(absIdx)}
+              dragHandleBind={bindHandle(id)}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ---------- EXERCISE CARD — Fitbod-style with PREVIOUS column ----------
-function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions, onSetCompleted, onReplace }: {
+function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions, onSetCompleted, onReplace, dragHandleBind }: {
   block: WorkoutBlock
   blockExerciseIdx: number
   session: WorkoutSession
@@ -428,6 +493,12 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
   onOpenActions: () => void
   onSetCompleted?: (restSec: number) => void
   onReplace?: () => void
+  dragHandleBind?: {
+    onTouchStart: (e: React.TouchEvent) => void
+    onTouchMove: (e: React.TouchEvent) => void
+    onTouchEnd: (e: React.TouchEvent) => void
+    onTouchCancel: (e: React.TouchEvent) => void
+  }
 }) {
   const be = block.exercises[blockExerciseIdx]
   const sets = useLiveQuery<WorkoutSet[]>(
@@ -483,6 +554,17 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
             {ex.category && ex.category !== 'other' ? ` · ${CATEGORY_LABELS[ex.category]}` : ''}
           </div>
         </div>
+        {/* Drag-reorder handle */}
+        {dragHandleBind && (
+          <button
+            {...dragHandleBind}
+            aria-label="Drag to reorder"
+            className="w-9 h-9 flex items-center justify-center text-[var(--color-text-faint)] active:bg-[var(--color-surface-2)] rounded-full touch-none"
+            style={{ touchAction: 'none' }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+          </button>
+        )}
         <button
           onClick={onOpenActions}
           aria-label="Exercise options"
@@ -519,6 +601,28 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
                   isActive={activeIdx === idx}
                   onDelete={cur ? () => db.workoutSets.delete(cur.id!) : undefined}
                   onReplace={onReplace}
+                  onDuplicate={async () => {
+                    // Insert a copy of this set right after, shifting later setIndices up.
+                    if (!cur) return
+                    const allLater = (sets ?? []).filter((s) => s.setIndex > idx).sort((a, b) => b.setIndex - a.setIndex)
+                    for (const s of allLater) {
+                      await db.workoutSets.update(s.id!, { setIndex: s.setIndex + 1 })
+                    }
+                    await db.workoutSets.add({
+                      sessionId: session.id!,
+                      blockId: block.id,
+                      blockExerciseId: be.id,
+                      exerciseId: ex.id!,
+                      setIndex: idx + 1,
+                      weight: cur.weight,
+                      reps: cur.reps,
+                      kind: 'set',
+                      completed: 0,
+                      createdAt: Date.now(),
+                    })
+                    setExtraSlots((n) => n + 1)
+                    toast.show({ title: 'Set duplicated', variant: 'success' })
+                  }}
                   onSet={async (values, completed) => {
                     const res = await logSet({
                       sessionId: session.id!,

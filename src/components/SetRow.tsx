@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { WorkoutSet } from '../db'
 import { useSwipeAction } from '../lib/useSwipeAction'
+import { useLongPress } from '../lib/useLongPress'
 import { haptic } from '../lib/haptic'
 import { AnimatedCheck } from './AnimatedCheck'
 
@@ -14,13 +15,14 @@ interface Props {
   onSet: (values: { weight: number; reps: number }, completed: boolean) => Promise<{ isPr: boolean }> | void
   onDelete?: () => void
   onReplace?: () => void       // swipe-right action — replace the parent exercise
+  onDuplicate?: () => void     // long-press the set number → duplicate this set
   onComplete?: () => void      // hook for auto-focus on next set
 }
 
 // Fitbod-style row:
 //   SET | PREVIOUS | LB | REPS | ✓
 // All inline editable. PREVIOUS is tappable to copy. Quick +5/-5 chips on weight focus.
-export function SetRow({ idx, current, lastSet, prescription, units, isActive, onSet, onDelete, onReplace, onComplete }: Props) {
+export function SetRow({ idx, current, lastSet, prescription, units, isActive, onSet, onDelete, onReplace, onDuplicate, onComplete }: Props) {
   const completed = current?.completed === 1
   const isPr = current?.isPr === 1
   const [weight, setWeight] = useState(String(current?.weight ?? ''))
@@ -81,6 +83,14 @@ export function SetRow({ idx, current, lastSet, prescription, units, isActive, o
     persist({ weight: lastSet?.weight ?? wn, reps: lastSet?.reps ?? rn }, false)
   }
 
+  const badgePress = useLongPress({
+    onClick: () => { /* tap is intentionally a no-op — PREVIOUS column handles autofill */ },
+    onLongPress: () => {
+      if (onDuplicate) { haptic('chime'); onDuplicate() }
+    },
+    ms: 480,
+  })
+
   function bumpWeight(d: number) {
     const base = wn || lastSet?.weight || prescription?.weight || 0
     const next = Math.max(0, base + d)
@@ -124,11 +134,15 @@ export function SetRow({ idx, current, lastSet, prescription, units, isActive, o
         className={`relative px-1 py-1.5 ${completed ? 'opacity-65' : ''} ${isActive && !completed ? 'bg-[var(--color-accent-soft)]/30' : ''} ${flash ? 'animate-pr-flash' : ''} rounded-xl`}
       >
         <div className="grid items-center gap-2" style={{ gridTemplateColumns: '28px 78px 1fr 1fr 44px' }}>
-          {/* Set number */}
-          <div className={`text-center text-sm font-bold tabnum ${completed ? 'text-[var(--color-text-dim)]' : 'text-[var(--color-text)]'}`}>
-            {isPr && <div className="text-[8px] text-[var(--color-accent)] font-black leading-none">PR</div>}
+          {/* Set number — tap to autofill prev; long-press to duplicate */}
+          <button
+            {...badgePress}
+            className={`text-center text-sm font-bold tabnum h-9 rounded-full flex flex-col items-center justify-center ${completed ? 'text-[var(--color-text-dim)]' : 'text-[var(--color-text)]'} active:bg-[var(--color-surface-2)]`}
+            aria-label="Tap to autofill, long-press to duplicate"
+          >
+            {isPr && <span className="text-[8px] text-[var(--color-accent)] font-black leading-none">PR</span>}
             <span className="leading-none">{idx}</span>
-          </div>
+          </button>
 
           {/* PREVIOUS — tappable to copy */}
           <button
