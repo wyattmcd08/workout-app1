@@ -15,6 +15,8 @@ import { useWakeLock } from '../lib/useWakeLock'
 import { useLongPress } from '../lib/useLongPress'
 import { Sheet } from '../components/Sheet'
 import { ExerciseActionSheet, type ExerciseAction } from '../components/ExerciseActionSheet'
+import { RestTimerPill } from '../components/RestTimerPill'
+import { WorkoutSummary } from '../components/WorkoutSummary'
 
 interface Props {
   session: WorkoutSession
@@ -26,8 +28,15 @@ interface Props {
 // Block-by-block walk-through driven entirely by the workout engine.
 export function FocusMode({ session, blocks, onExit }: Props) {
   const [activeIdx, setActiveIdx] = useState(0)
+  const [restSec, setRestSec] = useState<number | null>(null)
+  const [summaryFor, setSummaryFor] = useState<WorkoutSession | null>(null)
   const exercises = useLiveQuery(() => db.exercises.toArray(), [])
   const exById = new Map((exercises ?? []).map((e) => [e.id!, e]))
+  // Live session sets for header calorie / volume estimate
+  const sessionSets = useLiveQuery<WorkoutSet[]>(
+    () => db.workoutSets.where('sessionId').equals(session.id!).toArray(),
+    [session.id],
+  )
 
   useWakeLock(true)
 
@@ -36,16 +45,27 @@ export function FocusMode({ session, blocks, onExit }: Props) {
     return null
   }
 
+  function startRest(sec: number) {
+    if (sec > 0) {
+      setRestSec(sec)
+      haptic('chime')
+    }
+  }
+
+  async function finishWorkout() {
+    haptic('success')
+    await endSession(session.id!)
+    const fresh = await db.workoutSessions.get(session.id!)
+    if (fresh) setSummaryFor(fresh)
+    else onExit()
+  }
+
   function next() {
     if (activeIdx < blocks.length - 1) {
       setActiveIdx((i) => i + 1)
       haptic('tap')
     } else {
-      haptic('success')
-      void endSession(session.id!).then(() => {
-        toast.show({ title: 'Workout complete', variant: 'success' })
-        onExit()
-      })
+      finishWorkout()
     }
   }
 
@@ -62,29 +82,60 @@ export function FocusMode({ session, blocks, onExit }: Props) {
     onExit()
   }
 
+  // Live header stats
+  const completed = (sessionSets ?? []).filter((s) => s.completed === 1)
+  const liveVolume = completed.reduce((acc, s) => (s.kind === 'set' || !s.kind) ? acc + (s.weight ?? 0) * (s.reps ?? 0) : acc, 0)
+
   return (
     <div className="fixed inset-0 z-50 bg-[var(--color-bg)] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      {/* Top bar — minimal */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-        <button onClick={discard} className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-faint)] active:scale-95 transition-transform">
-          Exit
+      {/* Sticky top header — workout title, live timer, live calories, finish */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+        <button
+          onClick={discard}
+          aria-label="Exit workout"
+          className="w-9 h-9 flex items-center justify-center rounded-full text-[var(--color-text-faint)] active:bg-[var(--color-surface-2)]"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6L18 18M18 6L6 18"/></svg>
         </button>
-        <div className="text-center">
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-text-faint)]">
-            Block {activeIdx + 1} / {blocks.length}
+        <div className="flex-1 min-w-0 text-center">
+          <div className="display text-white truncate" style={{ fontSize: 15 }}>{session.name}</div>
+          <div className="flex items-baseline justify-center gap-3 mt-0.5">
+            <SessionElapsed startedAt={session.startedAt} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-faint)]">·</span>
+            <LiveCalories startedAt={session.startedAt} volume={liveVolume} />
           </div>
-          <div className="text-xs font-bold text-[var(--color-text-dim)] mt-0.5">{session.name}</div>
         </div>
-        <SessionElapsed startedAt={session.startedAt} />
+        <button
+          onClick={finishWorkout}
+          className="px-3 py-1.5 rounded-full bg-[var(--color-accent)] text-white text-xs font-bold uppercase tracking-wider shadow-[0_4px_14px_-4px_var(--color-accent)] active:scale-95 transition-transform"
+        >Finish</button>
       </div>
+
+      {/* Block-progress indicator strip */}
+      {blocks.length > 1 && (
+        <div className="px-3 py-2 flex gap-1 border-b border-[var(--color-border)]">
+          {blocks.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveIdx(i)}
+              className={`flex-1 h-1 rounded-full transition-colors ${
+                i === activeIdx ? 'bg-[var(--color-accent)]' :
+                i < activeIdx ? 'bg-[var(--color-accent)]/40' :
+                'bg-[var(--color-surface-3)]'
+              }`}
+              aria-label={`Jump to block ${i + 1}`}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Block content */}
       <div className="flex-1 overflow-y-auto">
-        <BlockFocus block={block} session={session} exById={exById} onComplete={next} />
+        <BlockFocus block={block} session={session} exById={exById} onComplete={next} onSetCompleted={startRest} />
       </div>
 
       {/* Bottom nav — block navigation */}
-      <div className="px-4 py-3 flex gap-2 border-t border-[var(--color-border)]">
+      <div className="px-4 py-3 flex gap-2 border-t border-[var(--color-border)] bg-[var(--color-bg)]">
         {activeIdx > 0 && (
           <button onClick={prev} className="flex-1 py-3 rounded-2xl border-2 border-[var(--color-border)] text-[var(--color-text-dim)] font-bold text-sm uppercase tracking-wider active:scale-[0.97] transition-transform">
             ← Previous
@@ -94,6 +145,20 @@ export function FocusMode({ session, blocks, onExit }: Props) {
           {activeIdx < blocks.length - 1 ? 'Next block →' : 'Finish workout'}
         </button>
       </div>
+
+      {restSec != null && (
+        <RestTimerPill initialSec={restSec} onClose={() => setRestSec(null)} />
+      )}
+
+      {summaryFor && (
+        <WorkoutSummary
+          session={summaryFor}
+          onClose={() => {
+            setSummaryFor(null)
+            onExit()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -106,24 +171,36 @@ function SessionElapsed({ startedAt }: { startedAt: number }) {
   }, [])
   const sec = Math.floor((now - startedAt) / 1000)
   return (
-    <div className="text-right">
-      <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-text-faint)]">Total</div>
-      <div className="display-num text-[var(--color-accent)] text-base">{formatMMSS(sec)}</div>
-    </div>
+    <span className="display-num text-[var(--color-accent)] tabnum" style={{ fontSize: 13 }}>{formatMMSS(sec)}</span>
+  )
+}
+
+function LiveCalories({ startedAt, volume }: { startedAt: number; volume: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const i = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(i)
+  }, [])
+  const minutes = Math.max(1, Math.round((now - startedAt) / 60000))
+  // Rough: 5 kcal/min for moderate strength, +0.0003 kcal per lb·rep
+  const kcal = Math.round(minutes * 5 + volume * 0.0003)
+  return (
+    <span className="tabnum text-[var(--color-text-dim)]" style={{ fontSize: 12, fontWeight: 700 }}>~{kcal} kcal</span>
   )
 }
 
 // ---------- BLOCK FOCUS ----------
-function BlockFocus({ block, session, exById, onComplete }: {
+function BlockFocus({ block, session, exById, onComplete, onSetCompleted }: {
   block: WorkoutBlock
   session: WorkoutSession
   exById: Map<number, Exercise>
   onComplete: () => void
+  onSetCompleted?: (restSec: number) => void
 }) {
   const profile = profileForFormat(block.format)
 
   if (!profile.hasCountdown && block.format === 'standard') {
-    return <StandardFocus block={block} session={session} exById={exById} />
+    return <StandardFocus block={block} session={session} exById={exById} onSetCompleted={onSetCompleted} />
   }
 
   if (block.format === 'circuit' || block.format === 'superset') {
@@ -139,12 +216,13 @@ function BlockFocus({ block, session, exById, onComplete }: {
 }
 
 // ---------- STANDARD (straight sets) — Fitbod-style ----------
-function StandardFocus({ block, session, exById }: { block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise> }) {
+function StandardFocus({ block, session, exById, onSetCompleted }: { block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise>; onSetCompleted?: (restSec: number) => void }) {
   const settings = useLiveQuery(() => getSettings(), [])
   const units = settings?.units ?? 'imperial'
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
   const [actionFor, setActionFor] = useState<number | null>(null)
+  const [noteFor, setNoteFor] = useState<number | null>(null)
 
   async function patchBlockExercises(mutator: (xs: BlockExercise[]) => BlockExercise[]) {
     if (!session.templateId) return
@@ -234,6 +312,7 @@ function StandardFocus({ block, session, exById }: { block: WorkoutBlock; sessio
               ex={ex}
               units={units}
               onOpenActions={() => setActionFor(i)}
+              onSetCompleted={onSetCompleted}
             />
           )
         })
@@ -268,6 +347,7 @@ function StandardFocus({ block, session, exById }: { block: WorkoutBlock; sessio
         const ex = exById.get(be?.exerciseId)
         if (!ex) return null
         const actions: ExerciseAction[] = [
+          { label: be.notes ? 'Edit notes' : 'Add notes', onClick: () => setNoteFor(idx), icon: '✎' },
           { label: 'Replace exercise',  onClick: () => setReplacingIdx(idx),  icon: '↔' },
           { label: 'Duplicate',         onClick: () => duplicateExercise(idx), icon: '⧉' },
           { label: 'Move up',           onClick: () => moveExercise(idx, -1),  icon: '↑', disabled: idx === 0 },
@@ -284,18 +364,66 @@ function StandardFocus({ block, session, exById }: { block: WorkoutBlock; sessio
           />
         )
       })()}
+
+      {noteFor !== null && (() => {
+        const idx = noteFor
+        const be = block.exercises[idx]
+        const ex = exById.get(be?.exerciseId)
+        if (!ex) return null
+        return (
+          <NoteEditor
+            title={ex.name}
+            initial={be.notes ?? ''}
+            onSave={async (note) => {
+              await patchBlockExercises((xs) => xs.map((b, i) => i === idx ? { ...b, notes: note.trim() || undefined } : b))
+              setNoteFor(null)
+              haptic('success')
+              toast.show({ title: note.trim() ? 'Notes saved' : 'Notes cleared', variant: 'success' })
+            }}
+            onClose={() => setNoteFor(null)}
+          />
+        )
+      })()}
     </div>
   )
 }
 
+function NoteEditor({ title, initial, onSave, onClose }: {
+  title: string
+  initial: string
+  onSave: (note: string) => void
+  onClose: () => void
+}) {
+  const [note, setNote] = useState(initial)
+  return (
+    <Sheet open title={`Notes · ${title}`} onClose={onClose}>
+      <div className="p-4 space-y-3">
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Cues, form notes, what felt off…"
+          autoFocus
+          rows={5}
+          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-3 focus:border-[var(--color-accent)] resize-none outline-none"
+        />
+        <button
+          onClick={() => onSave(note)}
+          className="w-full py-3.5 rounded-2xl bg-[var(--color-accent)] text-white font-bold uppercase tracking-wider text-sm shadow-[0_8px_24px_-12px_var(--color-accent)] active:scale-[0.98] transition-transform"
+        >Save notes</button>
+      </div>
+    </Sheet>
+  )
+}
+
 // ---------- EXERCISE CARD — Fitbod-style with PREVIOUS column ----------
-function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions }: {
+function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActions, onSetCompleted }: {
   block: WorkoutBlock
   blockExerciseIdx: number
   session: WorkoutSession
   ex: Exercise
   units: 'imperial' | 'metric'
   onOpenActions: () => void
+  onSetCompleted?: (restSec: number) => void
 }) {
   const be = block.exercises[blockExerciseIdx]
   const sets = useLiveQuery<WorkoutSet[]>(
@@ -398,10 +526,14 @@ function ExerciseCard({ block, blockExerciseIdx, session, ex, units, onOpenActio
                       kind: 'set',
                       completed: completed ? 1 : 0,
                     })
-                    if (completed && res.isPr) {
-                      toast.pr('🏆 NEW PR', ex.name)
-                      const s = await getSettings()
-                      if (s.soundOn) sound.fanfare()
+                    if (completed) {
+                      // Auto-start rest timer (per-exercise restSec, fallback 90s)
+                      onSetCompleted?.(be.restSec ?? 90)
+                      if (res.isPr) {
+                        toast.pr('🏆 NEW PR', ex.name)
+                        const s = await getSettings()
+                        if (s.soundOn) sound.fanfare()
+                      }
                     }
                     return { isPr: res.isPr }
                   }}
