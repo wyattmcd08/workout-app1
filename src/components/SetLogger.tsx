@@ -63,7 +63,9 @@ export function SetLogger({ idx, exercise, blockExercise, lastSet, current, unit
     const newVals = { ...vals, [metric]: next }
     setVals(newVals)
     haptic('tap')
-    if (completed) emit(newVals, true)
+    // Always persist — was previously only saving when set was completed,
+    // which is why "+/-" felt broken on fresh sets.
+    emit(newVals, completed)
   }
 
   function changeInput(metric: ExerciseMetric, raw: string) {
@@ -132,6 +134,14 @@ export function SetLogger({ idx, exercise, blockExercise, lastSet, current, unit
         }}
         className={`relative bg-[var(--color-surface)] ${flash ? 'animate-pr-flash' : ''}`}
       >
+        {/* Visible × delete — always available, no swipe required */}
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); haptic('tap'); onDelete() }}
+            aria-label="Delete set"
+            className="absolute top-1 right-1 z-10 w-6 h-6 rounded-full bg-[var(--color-surface-2)]/80 border border-[var(--color-border)] text-[var(--color-text-faint)] flex items-center justify-center text-xs font-bold active:scale-90 transition-transform"
+          >×</button>
+        )}
         <div className={`grid gap-2 items-center p-2`} style={{ gridTemplateColumns: `36px ${metrics.map(() => '1fr').join(' ')} 56px` }}>
           {/* Set number badge — tap to autofill */}
           <button

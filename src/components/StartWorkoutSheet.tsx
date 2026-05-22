@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type WorkoutTemplate, type WorkoutBlock } from '../db'
 import { today } from '../lib/date'
-import { startSession, startFromTemplate } from '../services/sessions'
+import { startFromTemplate } from '../services/sessions'
+import { createWorkout } from '../services/workouts'
 import { toast } from '../lib/toast'
 import { haptic } from '../lib/haptic'
 import { Sheet } from './Sheet'
@@ -13,14 +14,32 @@ interface Props {
   onStarted: (blocks: WorkoutBlock[]) => void
 }
 
+function genId(): string { return Math.random().toString(36).slice(2, 10) }
+
 export function StartWorkoutSheet({ open, onClose, onStarted }: Props) {
   const workouts = useLiveQuery(() => db.workoutTemplates.toArray(), [])
 
   async function quickStart() {
-    await startSession({ date: today(), name: 'Quick workout' })
+    // Create a one-off block-based template so Focus Mode can render and the
+    // user can add exercises mid-session. Mark with prefix so it's recognizable.
+    const block: WorkoutBlock = {
+      id: genId(),
+      type: 'strength',
+      format: 'standard',
+      name: 'Quick workout',
+      exercises: [],
+    }
+    const stamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const t = await createWorkout({
+      name: `Quick · ${stamp}`,
+      order: Date.now(),
+      blocks: [block],
+      favorite: 0,
+    })
+    await startFromTemplate(today(), t)
     haptic('success')
-    toast.show({ title: 'Quick start', detail: 'Empty session — add exercises as you go', variant: 'success' })
-    onStarted([])
+    toast.show({ title: 'Quick start', detail: 'Add exercises as you go', variant: 'success' })
+    onStarted([block])
     onClose()
   }
 

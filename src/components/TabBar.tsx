@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type TabKey = 'home' | 'workouts' | 'exercises' | 'progress' | 'nutrition' | 'settings'
+export type TabKey = 'home' | 'workouts' | 'progress' | 'nutrition' | 'settings'
 
 interface Props {
   active: TabKey
@@ -21,12 +21,6 @@ const Icons: Record<TabKey, ReactNode> = {
       <path d="M3 10v4" />
       <path d="M21 10v4" />
       <path d="M8 12h8" />
-    </svg>
-  ),
-  exercises: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="6" width="18" height="12" rx="2" />
-      <path d="M3 12h18M9 6v12M15 6v12" />
     </svg>
   ),
   progress: (
@@ -54,16 +48,15 @@ const Icons: Record<TabKey, ReactNode> = {
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'home',      label: 'Home' },
   { key: 'workouts',  label: 'Workouts' },
-  { key: 'exercises', label: 'Exercises' },
   { key: 'progress',  label: 'Progress' },
   { key: 'nutrition', label: 'Nutrition' },
   { key: 'settings',  label: 'Settings' },
 ]
 
-// Shrink buttons to fit 6 across iPhone width.
-const BUTTON_W = 42
+// 5 across iPhone — back to a more breathable size.
+const BUTTON_W = 48
 const GAP = 2
-const PAD = 5
+const PAD = 6
 
 export function TabBar({ active, onChange }: Props) {
   const activeIndex = TABS.findIndex((t) => t.key === active)

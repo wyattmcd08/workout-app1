@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, BLOCK_TYPE_LABELS, BLOCK_FORMAT_LABELS, getSettings, type WorkoutSession, type WorkoutBlock, type Exercise, type WorkoutSet } from '../db'
+import { db, BLOCK_TYPE_LABELS, BLOCK_FORMAT_LABELS, MUSCLE_LABELS, getSettings, type WorkoutSession, type WorkoutBlock, type Exercise, type WorkoutSet } from '../db'
 import { useBlockEngine, formatMMSS, profileForFormat } from '../services/workoutEngine'
 import { setBlockProgress, endSession, discardSession } from '../services/sessions'
 import { recordRound, recordFinish } from '../services/rounds'
 import { logSet } from '../services/sets'
+import { updateWorkout } from '../services/workouts'
 import { haptic } from '../lib/haptic'
 import { sound } from '../lib/sound'
 import { toast } from '../lib/toast'
 import { SetLogger } from '../components/SetLogger'
 import { useWakeLock } from '../lib/useWakeLock'
+import { Sheet } from '../components/Sheet'
 
 interface Props {
   session: WorkoutSession
@@ -137,25 +139,150 @@ function BlockFocus({ block, session, exById, onComplete }: {
 function StandardFocus({ block, session, exById }: { block: WorkoutBlock; session: WorkoutSession; exById: Map<number, Exercise> }) {
   const settings = useLiveQuery(() => getSettings(), [])
   const units = settings?.units ?? 'imperial'
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  async function addExerciseToBlock(exerciseIds: number[]) {
+    if (!session.templateId) return
+    const t = await db.workoutTemplates.get(session.templateId)
+    if (!t) return
+    const newBlocks = (t.blocks ?? []).map((b) => {
+      if (b.id !== block.id) return b
+      return {
+        ...b,
+        exercises: [
+          ...b.exercises,
+          ...exerciseIds.map((id) => ({
+            id: Math.random().toString(36).slice(2, 10),
+            exerciseId: id,
+            sets: 3,
+            reps: 8,
+          })),
+        ],
+      }
+    })
+    await updateWorkout(session.templateId, { blocks: newBlocks })
+    setPickerOpen(false)
+    haptic('success')
+    toast.show({ title: `Added ${exerciseIds.length} exercise${exerciseIds.length === 1 ? '' : 's'}`, variant: 'success' })
+  }
 
   return (
     <div className="px-4 py-4 space-y-3">
       <BlockHeader block={block} />
-      {block.exercises.map((be, i) => {
-        const ex = exById.get(be.exerciseId)
-        if (!ex) return null
-        return (
-          <ExerciseSetList
-            key={`${be.exerciseId}-${i}`}
-            block={block}
-            blockExerciseIdx={i}
-            session={session}
-            ex={ex}
-            units={units}
-          />
-        )
-      })}
+      {block.exercises.length === 0 ? (
+        <div className="card p-6 text-center">
+          <div className="text-sm text-[var(--color-text-dim)] mb-3">No exercises yet in this block.</div>
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="px-5 py-2.5 rounded-full bg-[var(--color-accent)] text-white font-bold text-sm shadow-[0_8px_24px_-12px_var(--color-accent)] active:scale-95 transition-transform"
+          >+ Add exercise</button>
+        </div>
+      ) : (
+        <>
+          {block.exercises.map((be, i) => {
+            const ex = exById.get(be.exerciseId)
+            if (!ex) return null
+            return (
+              <ExerciseSetList
+                key={be.id ?? `${be.exerciseId}-${i}`}
+                block={block}
+                blockExerciseIdx={i}
+                session={session}
+                ex={ex}
+                units={units}
+              />
+            )
+          })}
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="w-full p-3 rounded-2xl border border-dashed border-[var(--color-border)] text-[var(--color-text-dim)] text-xs font-bold uppercase tracking-wider active:scale-[0.99] transition-transform"
+          >+ Add exercise</button>
+        </>
+      )}
+
+      {pickerOpen && (
+        <ExercisePickerSheet
+          excludeIds={block.exercises.map((e) => e.exerciseId)}
+          onConfirm={addExerciseToBlock}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+// Lightweight exercise picker — multi-select. Reads the full library.
+function ExercisePickerSheet({ excludeIds, onConfirm, onClose }: {
+  excludeIds: number[]
+  onConfirm: (ids: number[]) => void
+  onClose: () => void
+}) {
+  const exercises = useLiveQuery(() => db.exercises.toArray(), [])
+  const [q, setQ] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  const filtered = (exercises ?? [])
+    .filter((e) => !excludeIds.includes(e.id!))
+    .filter((e) => !q || e.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  function toggle(id: number) {
+    setSelected((cur) => {
+      const next = new Set(cur)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <Sheet open title={`Add exercises${selected.size > 0 ? ` (${selected.size})` : ''}`} onClose={onClose} fullHeight>
+      <div className="flex flex-col h-full">
+        <div className="p-4 border-b border-[var(--color-border)]">
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search..."
+            autoFocus
+            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-3 focus:border-[var(--color-accent)]"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="p-8 text-center text-sm text-[var(--color-text-dim)]">
+              No exercises. Add them in the Library first.
+            </div>
+          ) : filtered.map((e) => {
+            const checked = selected.has(e.id!)
+            return (
+              <button
+                key={e.id}
+                onClick={() => toggle(e.id!)}
+                className={`w-full text-left px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between ${
+                  checked ? 'bg-[var(--color-accent-soft)]' : 'active:bg-[var(--color-surface-2)]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{e.name}</div>
+                  <div className="text-xs text-[var(--color-text-faint)]">{MUSCLE_LABELS[e.primary]}</div>
+                </div>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 text-xs font-bold ${
+                  checked ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white' : 'border-[var(--color-border)] text-transparent'
+                }`}>✓</div>
+              </button>
+            )
+          })}
+        </div>
+        {selected.size > 0 && (
+          <div className="p-4 border-t border-[var(--color-border)]">
+            <button
+              onClick={() => onConfirm(Array.from(selected))}
+              className="w-full py-3.5 rounded-2xl bg-[var(--color-accent)] text-white font-bold shadow-[0_8px_24px_-12px_var(--color-accent)] active:scale-[0.98] transition-transform"
+            >Add {selected.size} exercise{selected.size === 1 ? '' : 's'}</button>
+          </div>
+        )}
+      </div>
+    </Sheet>
   )
 }
 
@@ -174,8 +301,11 @@ function ExerciseSetList({ block, blockExerciseIdx, session, ex, units }: {
       .toArray(),
     [session.id, block.id, be.exerciseId],
   )
+  const [extraSlots, setExtraSlots] = useState(0)
   const targetSets = be.sets ?? 3
-  const slots = Array.from({ length: Math.max(targetSets, (sets ?? []).length) }, (_, i) => i + 1)
+  const maxExisting = (sets ?? []).reduce((m, s) => Math.max(m, s.setIndex), 0)
+  const total = Math.max(targetSets, maxExisting) + extraSlots
+  const slots = Array.from({ length: total }, (_, i) => i + 1)
 
   return (
     <div className="card p-4">
@@ -230,6 +360,10 @@ function ExerciseSetList({ block, blockExerciseIdx, session, ex, units }: {
           )
         })}
       </div>
+      <button
+        onClick={() => { setExtraSlots((n) => n + 1); haptic('tap') }}
+        className="mt-3 w-full py-2.5 rounded-xl border border-dashed border-[var(--color-border)] text-[var(--color-text-dim)] text-xs font-bold uppercase tracking-wider active:scale-[0.99] transition-transform"
+      >+ Add set</button>
     </div>
   )
 }

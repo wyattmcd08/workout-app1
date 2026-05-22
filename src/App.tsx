@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { TabBar, type TabKey } from './components/TabBar'
 import { Home } from './screens/Home'
 import { Train } from './screens/Train'
-import { Exercises } from './screens/Exercises'
 import { Progress } from './screens/Progress'
 import { Eat } from './screens/Eat'
 import { More } from './screens/More'
@@ -11,7 +10,7 @@ import { Onboarding } from './screens/Onboarding'
 import { FocusMode } from './screens/FocusMode'
 import { Toaster } from './components/Toaster'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { db, type WorkoutBlock } from './db'
+import { db, type WorkoutBlock, type WorkoutTemplate } from './db'
 import { today } from './lib/date'
 import { getBlocksForTemplate } from './services/workouts'
 import { seedIfEmpty } from './db/seed'
@@ -20,7 +19,7 @@ import { requestPersistentStorage, autoSyncIfConfigured } from './lib/autoBackup
 import { autoSnapshotIfFirstV3Launch } from './lib/preflight'
 import { haptic } from './lib/haptic'
 
-const TAB_ORDER: TabKey[] = ['home', 'workouts', 'exercises', 'progress', 'nutrition', 'settings']
+const TAB_ORDER: TabKey[] = ['home', 'workouts', 'progress', 'nutrition', 'settings']
 const DEFAULT_ACCENT = '#ff2d3d'
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -69,14 +68,26 @@ export default function App() {
     document.documentElement.style.setProperty('--color-accent-soft', hexToRgba(accent, 0.14))
   }, [settings?.accentColor])
 
-  // Resolve blocks when an active session is found
+  // Live-observe the active template so mid-workout edits (e.g. adding an
+  // exercise) reflect in FocusMode immediately. Previously this was a one-shot
+  // fetch — additions in active sessions wouldn't show until refresh.
+  const activeTemplate = useLiveQuery<WorkoutTemplate | undefined>(
+    () => activeSession?.templateId
+      ? db.workoutTemplates.get(activeSession.templateId)
+      : Promise.resolve<WorkoutTemplate | undefined>(undefined),
+    [activeSession?.templateId],
+  )
+
   useEffect(() => {
     let cancel = false
     if (!activeSession) {
       setFocusBlocks([])
       return
     }
-    if (activeSession.templateId) {
+    if (activeTemplate?.blocks && activeTemplate.blocks.length > 0) {
+      if (!cancel) setFocusBlocks(activeTemplate.blocks)
+    } else if (activeSession.templateId) {
+      // Fallback for legacy templates without blocks[]
       getBlocksForTemplate(activeSession.templateId).then((blocks) => {
         if (!cancel) setFocusBlocks(blocks)
       })
@@ -84,7 +95,7 @@ export default function App() {
       setFocusBlocks([])
     }
     return () => { cancel = true }
-  }, [activeSession?.id, activeSession?.templateId])
+  }, [activeSession?.id, activeSession?.templateId, activeTemplate?.blocks])
 
   function handleTabChange(next: TabKey) {
     const fromIdx = TAB_ORDER.indexOf(prevTab.current)
@@ -133,7 +144,6 @@ export default function App() {
         <ErrorBoundary fallbackLabel={`${tab} hit a bug.`}>
           {tab === 'home'      && <Home goTrain={() => handleTabChange('workouts')} goEat={() => handleTabChange('nutrition')} />}
           {tab === 'workouts'  && <Train onEnterFocus={(blocks) => { setFocusBlocks(blocks); setFocusMode(true) }} />}
-          {tab === 'exercises' && <Exercises />}
           {tab === 'progress'  && <Progress />}
           {tab === 'nutrition' && <Eat />}
           {tab === 'settings'  && <More />}

@@ -31,7 +31,7 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced',
 }
 
-export function Exercises() {
+export function Exercises({ embedded }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<FilterTab>('all')
   const [editing, setEditing] = useState<Exercise | 'new' | null>(null)
   const [query, setQuery] = useState('')
@@ -66,19 +66,21 @@ export function Exercises() {
   }
 
   return (
-    <div className="pb-32 page-exercises">
-      <Header
-        title="Library"
-        subtitle="Your exercises, your way"
-        right={
-          <button
-            onClick={() => setEditing('new')}
-            className="text-xs font-bold px-3.5 py-2 rounded-full bg-[var(--color-accent)] text-white shadow-[0_8px_24px_-12px_var(--color-accent)] active:scale-95 transition-transform"
-          >+ New</button>
-        }
-      />
+    <div className={embedded ? '' : 'pb-32 page-exercises'}>
+      {!embedded && (
+        <Header
+          title="Library"
+          subtitle="Your exercises, your way"
+          right={
+            <button
+              onClick={() => setEditing('new')}
+              className="text-xs font-bold px-3.5 py-2 rounded-full bg-[var(--color-accent)] text-white shadow-[0_8px_24px_-12px_var(--color-accent)] active:scale-95 transition-transform"
+            >+ New</button>
+          }
+        />
+      )}
 
-      <div className="px-4 mb-3">
+      <div className={`px-4 ${embedded ? 'mb-3' : 'mb-3'}`}>
         <Segmented<FilterTab>
           options={[
             { value: 'all',       label: 'All' },
